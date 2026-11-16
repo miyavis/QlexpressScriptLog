@@ -1,0 +1,1177 @@
+import { ref, reactive, computed, watch, nextTick } from "vue";
+import {
+  CARD_OPS,
+  newCard,
+  genScriptFromCards,
+  parseScriptToCards,
+  hashContent,
+  isMetaStale,
+  validateCardStructure
+} from "./composables/canvasLogic.js";
+import {
+  normalizeFunctions,
+  suggestVarName,
+  collectKnownVariables,
+  BUILTIN_FUNCTIONS
+} from "./composables/functionRegistry.js";
+import { buildExecutionExport } from "./composables/exportRecord.js";
+import { buildScriptExport, parseScriptImport, dedupeImportName } from "./composables/scriptTransfer.js";
+import { buildVersionList, restoreVersion } from "./composables/versionHistory.js";
+import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
+import { filterScripts, filterExecutions } from "./composables/listFilters.js";
+
+const API = "/api";
+
+/* ---------- 视图状态 ---------- */
+const view = ref("scripts"); // 'scripts' | 'executions'
+
+/* ---------- 脚本管理状态 ---------- */
+const scripts = ref([]);
+const selectedScriptId = ref(null);
+const editing = ref(false);
+const form = reactive({
+  id: "",
+  name: "",
+  content: "",
+  defaultParamsJson: "{}"
+});
+
+/* ---------- 脚本右侧执行日志状态 ---------- */
+const scriptExecutions = ref([]);
+const selectedLogTraceId = ref(null);
+const selectedLogRecord = ref(null);
+
+/* ---------- 执行记录状态 ---------- */
+const executions = ref([]);
+const selectedTraceId = ref(null);
+const selectedRecord = ref(null);
+
+/* ---------- 辅助 ---------- */
+const formatTime = (ts) => {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  return d.toLocaleString("zh-CN", { hour12: false });
+};
+
+const formatJson = (v) => {
+  if (v == null) return "null";
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch (e) {
+    return String(v);
+  }
+};
+
+/** 紧凑单行 JSON（用于默认参数编辑框，避免多行占位） */
+const compactJson = (v) => {
+  if (v == null) return "{}";
+  try {
+    return JSON.stringify(v);
+  } catch (e) {
+    return String(v);
+  }
+};
+
+/** 选中执行记录的行级日志，按行号排序（包含未走到的分支行，用于显示“未走此分支”） */
+const lineLogGroups = computed(() => {
+  if (!selectedLogRecord.value || !selectedLogRecord.value.lineExecutions) {
+    return [];
+  }
+  return Object.values(selectedLogRecord.value.lineExecutions)
+    .sort((a, b) => a.lineNo - b.lineNo);
+});
+
+/** 执行摘要：供业务人员快速了解整体逻辑 */
+const execSummary = computed(() => {
+  if (!selectedLogRecord.value) return null;
+  const r = selectedLogRecord.value;
+  let totalCalls = 0;
+  let totalSteps = 0;
+  let totalExprs = 0;
+  let failedCalls = 0;
+  const callNames = new Set();
+  const stepNames = new Set();
+  for (const le of Object.values(r.lineExecutions || {})) {
+    totalCalls += le.calls?.length || 0;
+    totalSteps += le.steps?.length || 0;
+    totalExprs += le.expressions?.length || 0;
+    for (const c of le.calls || []) {
+      callNames.add(c.chineseName || c.serviceName);
+      if (!c.success) failedCalls++;
+    }
+    for (const s of le.steps || []) {
+      stepNames.add(s.stepName);
+    }
+  }
+  return {
+    success: r.success,
+    durationMs: r.durationMs,
+    totalCalls,
+    totalSteps,
+    totalExprs,
+    failedCalls,
+    callNames: Array.from(callNames),
+    stepNames: Array.from(stepNames),
+    result: r.result,
+    errorType: r.errorType,
+    errorMessage: r.errorMessage
+  };
+});
+
+const truncate = (s, maxLen) => {
+  if (!s) return "";
+  return s.length > maxLen ? s.substring(0, maxLen) + "…" : s;
+};
+
+const formatExprValue = (v) => {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+};
+
+/* ---------- 业务友好的行级日志辅助函数 ---------- */
+
+/** 标量显示：字符串/数字直接显示，其他 JSON 化 */
+const fmtScalar = (v) => {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch (e) {
+    return String(v);
+  }
+};
+
+/** 脚本入参（显示在日志顶部一次） */
+const inputParams = computed(() => {
+  const p = selectedLogRecord.value && selectedLogRecord.value.params;
+  if (!p || typeof p !== "object") return [];
+  return Object.entries(p).map(([k, v]) => `${k} = ${fmtScalar(v)}`);
+});
+
+/**
+ * 解析脚本的 如果/否则 结构：返回 行号 → 分支('then'|'else') 映射、如果所在行
+ * 用于给每行盖上“则分支/否则分支”标签，并说明未执行的分支原因
+ */
+const branchInfo = computed(() => {
+  const info = { map: {}, ifLine: null };
+  if (!selectedLogRecord.value || !selectedLogRecord.value.scriptSnapshot) return info;
+  const lines = selectedLogRecord.value.scriptSnapshot.split("\n");
+  let stage = "none"; // none → then → else → none
+  let depth = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    const opens = (text.match(/\{/g) || []).length;
+    const closes = (text.match(/\}/g) || []).length;
+    if (stage === "none" && text.includes("如果")) {
+      info.ifLine = i + 1;
+      stage = "then";
+      depth = opens - closes;
+      continue;
+    }
+    if (stage === "then") {
+      if (text.includes("否则")) {
+        stage = "else";
+      } else {
+        info.map[i + 1] = "then";
+      }
+      depth += opens - closes;
+      if (depth <= 0) stage = "none";
+      continue;
+    }
+    if (stage === "else") {
+      info.map[i + 1] = "else";
+      depth += opens - closes;
+      if (depth <= 0) stage = "none";
+    }
+  }
+  return info;
+});
+
+const lineBranch = (le) => branchInfo.value.map[le.lineNo] || null;
+
+/** 行头分支标签 */
+const branchChip = (le) => {
+  const b = lineBranch(le);
+  return b === "then" ? "则分支" : b === "else" ? "否则分支" : null;
+};
+
+/** 条件文本：从脚本第 ifLine 行截取 如果(...) 里的内容 */
+const condText = computed(() => {
+  if (branchInfo.value.ifLine == null) return "";
+  const snap = (selectedLogRecord.value && selectedLogRecord.value.scriptSnapshot) || "";
+  const line = (snap.split("\n")[branchInfo.value.ifLine - 1] || "").trim();
+  const m = line.match(/如果\s*[（(](.*)[）)]/);
+  if (m) return m[1].trim();
+  const start = line.indexOf("如果");
+  const end = line.indexOf("则", start);
+  const body = line.substring(start + 2, end > start ? end : line.length);
+  return body.replace(/^[（(]+|[）)]+$/g, "").trim();
+});
+
+/** 条件判断结果：取如果行里求过值的布尔运算符 */
+const condVerdict = computed(() => {
+  const ifLine = branchInfo.value.ifLine;
+  if (ifLine == null || !selectedLogRecord.value) return null;
+  const le = (selectedLogRecord.value.lineExecutions || {})[ifLine];
+  if (!le || !le.expressions) return null;
+  const cmp = le.expressions.find(e => e && e.type === "OPERATOR" && typeof e.value === "boolean" && e.evaluated);
+  return cmp ? cmp.value : null;
+});
+
+/** 未走分支时的说明文字 */
+const notTakenText = (le) => {
+  const b = lineBranch(le);
+  if (!b || le.hasActivity) return null;
+  const v = condVerdict.value;
+  const ifLine = branchInfo.value.ifLine;
+  if (b === "then" && v === false) {
+    return `第 ${ifLine} 行条件不成立，未走此分支`;
+  }
+  if (b === "else" && v !== false) {
+    return `第 ${ifLine} 行条件成立，未走此分支`;
+  }
+  return null;
+};
+
+const OP_SYMBOLS = { "*": "×", "/": "÷", "=": "=", "+": "+", "-": "-" };
+
+/** 变量赋值描述：从表达式轨迹还原 “积分 = 380（来源：…）” */
+const lineAssigns = (le) => {
+  const exprs = (le.expressions || []).filter(e => e && e.evaluated);
+  const eq = exprs.find(e => e.type === "OPERATOR" && e.token === "=");
+  if (!eq) return [];
+  const assigned = exprs.find(e => e.type === "VARIABLE" && e.value == null);
+  const parts = [];
+  for (const e of exprs) {
+    if (e === eq) continue;
+    if (assigned && e === assigned) continue;
+    if (e.type === "OPERATOR") {
+      parts.push(OP_SYMBOLS[e.token] || e.token);
+    } else if (e.type === "VARIABLE") {
+      parts.push(e.value != null ? `${e.token}(${fmtScalar(e.value)})` : e.token);
+    } else if (e.type === "FUNCTION" || e.type === "METHOD") {
+      parts.push(`调用「${e.token}」`);
+    } else if (e.type === "VALUE") {
+      parts.push(fmtScalar(e.value));
+    }
+    // IF/RETURN/BLOCK 等结构节点不参与
+  }
+  // 去除连续重复
+  const dedup = [];
+  for (const p of parts) {
+    if (!dedup.length || dedup[dedup.length - 1] !== p) dedup.push(p);
+  }
+  // 运算符开头（轨迹父节点先出现）→ 还原成 中缀形式：a × b
+  let src = "";
+  if (dedup.length && dedup[0].length <= 1) {
+    const op = dedup[0];
+    const operands = dedup.slice(1);
+    src = operands.length >= 2 ? operands.join(` ${op} `) : operands.join(" ");
+  } else {
+    src = dedup.join(" · ");
+  }
+  const name = assigned ? assigned.token : "结果";
+  return [`${name} = ${fmtScalar(eq.value)}${src ? `（${src}）` : ""}`];
+};
+
+/** 返回行描述： RETURN 表达式 → “返回结果：打折积分 → 760” */
+const leReturn = (le) => {
+  const ret = (le.expressions || []).find(e => e && e.type === "RETURN" && e.evaluated && e.value != null);
+  if (!ret) return null;
+  const v = (le.expressions || []).find(e => e && e.type === "VARIABLE" && e.value != null && e.token);
+  return `返回结果：${v ? v.token + " → " : ""}${fmtScalar(ret.value)}`;
+};
+
+/** 服务调用参数格式化：argsJson '[\"张三\"]' → '张三' */
+const callArgs = (call) => {
+  try {
+    const arr = JSON.parse(call.argsJson || "[]");
+    return Array.isArray(arr) ? arr.map(fmtScalar).join(", ") : String(call.argsJson || "");
+  } catch (e) {
+    return String(call.argsJson || "");
+  }
+};
+
+/** 服务调用结果格式化：去掉 JSON 引号 */
+const callResult = (call) => {
+  if (call.resultJson == null) return "";
+  try {
+    return fmtScalar(JSON.parse(call.resultJson));
+  } catch (e) {
+    return call.resultJson;
+  }
+};
+
+/** 原始轨迹的单条描述（折叠区内使用） */
+const rawExprDesc = (e) => {
+  if (!e) return "";
+  const labels = {
+    IF: "如果", RETURN: "返回", VARIABLE: "变量", OPERATOR: "运算", VALUE: "值",
+    FUNCTION: "函数", METHOD: "函数", BLOCK: "代码块"
+  };
+  let s = `${labels[e.type] || e.type}${e.token ? `【${e.token}】` : ""}`;
+  if (e.evaluated && e.value != null) s += ` = ${fmtScalar(e.value)}`;
+  if (!e.evaluated) s += "（未执行）";
+  return s;
+};
+
+/* ---------- 脚本行级日志状态 ---------- */
+const hoverLineNo = ref(null);
+const highlightLineNo = ref(null);
+/** 左侧悬停行时，右侧高亮对应的调用 startTime */
+const highlightedCallStartTime = ref(null);
+/** 执行摘要是否展开 */
+const execSummaryExpanded = ref(false);
+/** 已展开的调用 key 集合（startTime 的字符串形式） */
+const expandedCallKeys = ref(new Set());
+/** 顶层调用列表（按执行时间顺序） */
+const topLevelCalls = computed(() => {
+  if (!selectedLogRecord.value || !selectedLogRecord.value.calls) {
+    return [];
+  }
+  return selectedLogRecord.value.calls;
+});
+
+/** 切换调用展开/折叠 */
+const toggleCallExpand = (startTime) => {
+  const key = String(startTime);
+  if (expandedCallKeys.value.has(key)) {
+    expandedCallKeys.value.delete(key);
+  } else {
+    expandedCallKeys.value.add(key);
+  }
+};
+
+const isCallExpanded = (startTime) => {
+  return expandedCallKeys.value.has(String(startTime));
+};
+
+/** 右侧点击调用时，高亮左侧对应行号 */
+const highlightLine = (lineNo) => {
+  highlightLineNo.value = lineNo;
+};
+
+/** 左侧悬停行时，根据行号查找对应的调用并高亮右侧 */
+const highlightCallByLine = (lineNo) => {
+  if (!lineNo || !selectedLogRecord.value || !selectedLogRecord.value.calls) {
+    highlightedCallStartTime.value = null;
+    return;
+  }
+  const findCall = (calls) => {
+    for (const c of calls) {
+      if (c.lineNo === lineNo) {
+        return c;
+      }
+      if (c.children && c.children.length) {
+        const found = findCall(c.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  const found = findCall(selectedLogRecord.value.calls);
+  highlightedCallStartTime.value = found ? String(found.startTime) : null;
+};
+
+/** 脚本内容按行拆分，用于左侧行号渲染 */
+const scriptLines = computed(() => {
+  if (!form.content) return [];
+  return form.content.split("\n");
+});
+
+const onEditorEnter = () => {
+  hoverLineNo.value = 1;
+};
+const onEditorMouseMove = (e) => {
+  const textarea = e.target;
+  if (!textarea) return;
+  const rect = textarea.getBoundingClientRect();
+  const lineHeight = 22;
+  const relativeY = e.clientY - rect.top - parseFloat(getComputedStyle(textarea).paddingTop || '10');
+  const lineNo = Math.floor(relativeY / lineHeight) + 1;
+  if (lineNo >= 1 && lineNo <= scriptLines.value.length) {
+    hoverLineNo.value = lineNo;
+  }
+};
+
+/* ---------- 卡片画布 ---------- */
+const canvasMode = ref(false);
+const canvasCards = ref([]);
+const dragPayload = ref(null);
+const hoverCardId = ref(null);
+const logHoverCardId = ref(null);
+const selectedCardId = ref(null);
+
+const CARD_TYPES = [
+  { type: "call", label: "取数卡", icon: "🔎", hint: "变量 = 中文函数(参数)" },
+  { type: "prepcall", label: "取数卡·带参", icon: "🧰", hint: "先算参数再调服务（生成两行）" },
+  { type: "calc", label: "计算卡", icon: "🧮", hint: "变量 = 表达式" },
+  { type: "log", label: "打印卡", icon: "📝", hint: "记录日志(标题, 内容)" },
+  { type: "if", label: "条件卡", icon: "❓", hint: "如果 (A 运算 B) 则 {" },
+  { type: "else", label: "否则卡", icon: "🔀", hint: "} 否则 {" },
+  { type: "end", label: "结束卡", icon: "🔚", hint: "}" },
+  { type: "return", label: "返回卡", icon: "🎯", hint: "返回 表达式" },
+  { type: "text", label: "原样卡", icon: "📄", hint: "保留脚本原文（高级语法用）" }
+];
+
+/** 卡片 → 中文脚本（纯逻辑在 composables/canvasLogic.js，生成期同步记录行号映射） */
+const genCanvas = computed(() => genScriptFromCards(canvasCards.value));
+
+watch(canvasCards, () => {
+  if (canvasMode.value) {
+    form.content = genCanvas.value.script;
+    lastCanvasScript.value = form.content;
+  }
+}, { deep: true });
+
+const enterCanvas = () => {
+  // 从文本模式切换过来：若脚本文本被手工改过（或画布为空），把当前脚本解析成卡片
+  if (canvasCards.value.length === 0 || form.content !== lastCanvasScript.value) {
+    canvasCards.value = parseScriptToCards(form.content);
+  }
+  canvasMode.value = true;
+  form.content = genCanvas.value.script;
+};
+
+/** 把当前生成的/导入的脚本记下来，用于判断“文本是否被手工改过” */
+const lastCanvasScript = ref(null);
+
+const addCard = (type) => {
+  const card = newCard(type);
+  // 拖入即配置：取数类卡片按函数名自动推荐结果变量名，并聚焦第一个输入框
+  if ((card.type === "call" || card.type === "prepcall") && !card.varName) {
+    card.varName = suggestVarName(card.func);
+  }
+  canvasCards.value.push(card);
+  focusCardFirstInput(card.id);
+};
+
+const removeCard = (idx) => {
+  canvasCards.value.splice(idx, 1);
+};
+
+const moveCard = (idx, dir) => {
+  const target = idx + dir;
+  if (target < 0 || target >= canvasCards.value.length) return;
+  const cards = canvasCards.value;
+  const tmp = cards[idx];
+  cards[idx] = cards[target];
+  cards[target] = tmp;
+};
+
+// HTML5 拖拽：部件 → 画布的同时支持画布内卡片重排
+const onPaletteDragStart = (e, type) => {
+  dragPayload.value = { kind: "new", type };
+  if (e.dataTransfer) e.dataTransfer.setData("text/plain", "new:" + type);
+};
+const onCardDragStart = (e, idx) => {
+  dragPayload.value = { kind: "move", index: idx };
+  if (e.dataTransfer) e.dataTransfer.setData("text/plain", "move:" + idx);
+};
+const onCardDrop = (e, idx) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const p = dragPayload.value;
+  dragPayload.value = null;
+  if (!p) return;
+  if (p.kind === "new") {
+    const card = newCard(p.type);
+    if ((card.type === "call" || card.type === "prepcall") && !card.varName) {
+      card.varName = suggestVarName(card.func);
+    }
+    canvasCards.value.splice(idx, 0, card);
+    focusCardFirstInput(card.id);
+  } else if (p.kind === "move") {
+    const cards = canvasCards.value;
+    const moved = cards.splice(p.index, 1)[0];
+    cards.splice(idx > p.index ? idx - 1 : idx, 0, moved);
+  }
+};
+
+/** 分支缩进深度：如果 → 内部卡片缩进 1 层；结束卡收回一层 */
+const cardDepth = computed(() => {
+  let depth = 0;
+  return canvasCards.value.map((c) => {
+    let display;
+    if (c.type === "end") {
+      depth = Math.max(0, depth - 1);
+      display = depth;
+    } else if (c.type === "else") {
+      display = Math.max(0, depth - 1);
+    } else {
+      display = depth;
+      if (c.type === "if") depth += 1;
+    }
+    return display;
+  });
+});
+
+const TYPE_META = {
+  call: { icon: "🔎", label: "取数", cls: "t-call" },
+  prepcall: { icon: "🧰", label: "取数·带参", cls: "t-prep" },
+  calc: { icon: "🧮", label: "计算", cls: "t-calc" },
+  log: { icon: "📝", label: "打印", cls: "t-log" },
+  if: { icon: "❓", label: "如果", cls: "t-if" },
+  else: { icon: "🔀", label: "否则", cls: "t-else" },
+  end: { icon: "🔚", label: "结束", cls: "t-end" },
+  return: { icon: "🎯", label: "返回", cls: "t-return" },
+  text: { icon: "📄", label: "原样", cls: "t-text" }
+};
+const cardIcon = (type) => (TYPE_META[type] || {}).icon || "▢";
+const typeClass = (type) => (TYPE_META[type] || {}).cls || "";
+const cardTitle = (c) => {
+  if (c.type === "call") return `取数 · ${c.varName || "?"} = ${c.func || "?"}()`;
+  if (c.type === "prepcall") return `取数·带参 · ${c.prepName || "?"} → ${c.varName || "?"} = ${c.func || "?"}()`;
+  if (c.type === "calc") return `计算 · ${c.varName || "?"}`;
+  if (c.type === "log") return `打印 · ${c.title || "?"}`;
+  if (c.type === "if") return `如果 · ${c.left || "?"} ${c.op || ""} ${c.right || "?"}`;
+  if (c.type === "else") return "否则";
+  if (c.type === "end") return "条件块结束";
+  if (c.type === "return") return `返回 · ${c.expr || "?"}`;
+  if (c.type === "text") return `原样 · ${String(c.raw || "").slice(0, 18) || "?"}`;
+  return "";
+};
+
+/** 卡片 ↔ 行号映射（画布模式专用） */
+const cardMapById = (id) => genCanvas.value.sourceMap.find((m) => m.cardId === id) || null;
+const cardRangeText = (id) => {
+  const m = cardMapById(id);
+  if (!m || m.empty) return "";
+  return m.startLine === m.endLine ? `第 ${m.startLine} 行` : `第 ${m.startLine}~${m.endLine} 行`;
+};
+const cardOfLineId = (lineNo) => {
+  const m = genCanvas.value.sourceMap.find((x) => !x.empty && lineNo >= x.startLine && lineNo <= x.endLine);
+  return m ? m.cardId : null;
+};
+/** if/else/end 配对校验：问题卡片在画布上标红（在执行报错前给出人看得懂的原因） */
+const structureIssues = computed(() => validateCardStructure(canvasCards.value));
+const issueMap = computed(() => {
+  const m = {};
+  for (const it of structureIssues.value) {
+    m[it.cardId] = it.message;
+  }
+  return m;
+});
+const cardIssue = (id) => issueMap.value[id] || null;
+
+/** 该卡片是否被选中/悬停（画布上 + 来自日志悬停） */
+const cardSelected = (id) => id === selectedCardId.value || id === logHoverCardId.value;
+/** 日志行高亮集合：卡片悬停/选中时对应所有行 */
+const activeLineSet = computed(() => {
+  const s = new Set();
+  if (!canvasMode.value) return s;
+  for (const id of [hoverCardId.value, selectedCardId.value, logHoverCardId.value]) {
+    if (!id) continue;
+    const m = cardMapById(id);
+    if (m && !m.empty) {
+      for (let i = m.startLine; i <= m.endLine; i++) s.add(i);
+    }
+  }
+  return s;
+});
+const onLogLineEnter = (lineNo) => {
+  if (!canvasMode.value) return;
+  const id = cardOfLineId(lineNo);
+  if (id) logHoverCardId.value = id;
+};
+const onLogLineLeave = () => {
+  logHoverCardId.value = null;
+};
+/** 日志行头的卡片名标签（画布模式专用；无映射自动不显示） */
+const cardByIdMap = computed(() => {
+  const m = {};
+  for (const c of canvasCards.value) m[c.id] = c;
+  return m;
+});
+const cardChip = (lineNo) => {
+  if (!canvasMode.value) return null;
+  const id = cardOfLineId(lineNo);
+  if (!id) return null;
+  const c = cardByIdMap.value[id];
+  if (!c) return null;
+  return `${cardIcon(c.type)} ${cardTitle(c)}`;
+};
+const onLogLineClick = (lineNo) => {
+  if (!canvasMode.value) return;
+  const id = cardOfLineId(lineNo);
+  if (id) {
+    selectedCardId.value = id;
+    // 视觉定位：长画布上把命中的卡片滚进视野
+    nextTick(() => {
+      const el = document.querySelector(`[data-card-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+};
+
+/* ---------- 脚本管理 API ---------- */
+const loadScripts = async () => {
+  try {
+    const res = await fetch(`${API}/scripts`);
+    scripts.value = await res.json();
+  } catch (e) {
+    alert("加载脚本列表失败：" + e);
+  }
+};
+
+const selectScript = (s) => {
+  selectedScriptId.value = s.id;
+  editing.value = true;
+  form.id = s.id;
+  form.name = s.name || "";
+  form.content = s.content || "";
+  form.defaultParamsJson = compactJson(s.defaultParams);
+  // 默认展示卡片画布：meta.cards 未过期（contentHash 匹配）时用保存的卡片；
+  // 过期（外部手改过内容）或缺失时，以脚本文本为真相重新反解析，避免旧卡片静默覆盖手改内容
+  const metaCards = s.meta && Array.isArray(s.meta.cards) ? s.meta.cards : null;
+  const useSavedCards = metaCards && !isMetaStale(s.content, s.meta);
+  canvasCards.value = useSavedCards
+    ? JSON.parse(JSON.stringify(metaCards))
+    : parseScriptToCards(s.content || "");
+  hoverCardId.value = null;
+  logHoverCardId.value = null;
+  selectedCardId.value = null;
+  canvasMode.value = true;
+  // 同步生成结果并记录快照（切到文本模式时保持一致）
+  form.content = genCanvas.value.script;
+  lastCanvasScript.value = form.content;
+  refreshSavedSnapshot();
+  // 加载该脚本的执行日志，实现“脚本右侧日志一一对应”
+  loadScriptExecutions(s.id);
+};
+
+const newScript = () => {
+  selectedScriptId.value = null;
+  editing.value = true;
+  form.id = "";
+  form.name = "";
+  form.content = "";
+  form.defaultParamsJson = "{}";
+  canvasCards.value = [];
+  canvasMode.value = true;
+  lastCanvasScript.value = "";
+  refreshSavedSnapshot();
+};
+
+const cancelEdit = () => {
+  editing.value = false;
+  selectedScriptId.value = null;
+  selectedLogTraceId.value = null;
+  selectedLogRecord.value = null;
+  scriptExecutions.value = [];
+  expandedCallKeys.value = new Set();
+  canvasMode.value = false;
+  canvasCards.value = [];
+  hoverCardId.value = null;
+  logHoverCardId.value = null;
+  selectedCardId.value = null;
+  form.id = form.name = form.content = form.defaultParamsJson = "";
+};
+
+/** 保存快照：检测“有未保存的修改”（执行前提醒，避免执行记录与脚本版本错位） */
+const savedSnapshot = ref({ name: "", content: "", paramsJson: "" });
+const refreshSavedSnapshot = () => {
+  savedSnapshot.value = { name: form.name, content: form.content, paramsJson: form.defaultParamsJson };
+};
+const hasUnsavedChanges = computed(() =>
+  editing.value && !!form.id && (
+    form.name !== savedSnapshot.value.name ||
+    form.content !== savedSnapshot.value.content ||
+    form.defaultParamsJson !== savedSnapshot.value.paramsJson
+  )
+);
+
+const saveScript = async (keepOpen = false) => {
+  let defaultParams = {};
+  try {
+    defaultParams = JSON.parse(form.defaultParamsJson || "{}");
+  } catch (e) {
+    alert("默认参数不是合法的 JSON");
+    return;
+  }
+
+  const payload = {
+    id: form.id || null,
+    name: form.name,
+    content: form.content,
+    defaultParams
+  };
+  // meta 是 content 的派生视图（单一事实源）：无论哪种模式都把卡片+映射+hash 一起保存。
+  // 文本模式保存时反解析当前文本生成卡片，避免 meta 丢失后打开靠“猜”恢复。
+  const cardsForMeta = canvasMode.value
+    ? JSON.parse(JSON.stringify(canvasCards.value))
+    : parseScriptToCards(form.content);
+  payload.meta = {
+    cards: cardsForMeta,
+    cardSourceMap: genScriptFromCards(cardsForMeta).sourceMap,
+    contentHash: hashContent(form.content)
+  };
+
+  try {
+    let res;
+    if (form.id) {
+      res = await fetch(`${API}/scripts/${form.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      res = await fetch(`${API}/scripts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    }
+    if (!res.ok) throw new Error(await res.text());
+    refreshSavedSnapshot();
+    await loadScripts();
+    if (!keepOpen) {
+      cancelEdit();
+    }
+  } catch (e) {
+    alert("保存脚本失败：" + e);
+  }
+};
+
+const deleteScript = async (id) => {
+  if (!confirm("确定删除该脚本吗？")) return;
+  try {
+    const res = await fetch(`${API}/scripts/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(await res.text());
+    await loadScripts();
+    if (selectedScriptId.value === id) {
+      cancelEdit();
+    }
+  } catch (e) {
+    alert("删除失败：" + e);
+  }
+};
+
+const runScript = async () => {
+  if (!form.id) {
+    alert("请先选择或新建一个脚本");
+    return;
+  }
+  // 未保存提醒：未保存就执行会导致执行记录与脚本版本错位，事后排查会困惑
+  if (hasUnsavedChanges.value) {
+    if (!confirm("当前有未保存的修改。点击“确定”先保存再执行；点击“取消”放弃本次执行。")) {
+      return;
+    }
+    await saveScript(true);
+  }
+  let params = {};
+  try {
+    params = JSON.parse(form.defaultParamsJson || "{}");
+  } catch (e) {
+    alert("默认参数不是合法的 JSON");
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/executions/run?scriptId=${encodeURIComponent(form.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const record = await res.json();
+    // 执行完成后直接显示到右侧日志框（不跳转页面）
+    selectedLogRecord.value = record;
+    selectedLogTraceId.value = record.traceId;
+    // 刷新该脚本的执行记录列表
+    await loadScriptExecutions(form.id);
+    // 如需查看全量记录，可手动切换到“执行记录”页
+  } catch (e) {
+    alert("执行脚本失败：" + e);
+  }
+};
+
+/* ---------- 执行记录 API ---------- */
+const loadExecutions = async () => {
+  try {
+    const res = await fetch(`${API}/executions?limit=100`);
+    executions.value = await res.json();
+  } catch (e) {
+    alert("加载执行记录失败：" + e);
+  }
+};
+
+/** 加载指定脚本的执行日志（供脚本页右侧一一对应展示） */
+const loadScriptExecutions = async (scriptId) => {
+  if (!scriptId) return;
+  try {
+    const res = await fetch(`${API}/executions/script/${encodeURIComponent(scriptId)}?limit=50`);
+    scriptExecutions.value = await res.json();
+    // 如果之前选中的日志不在新列表中，清空选中
+    if (selectedLogTraceId.value && !scriptExecutions.value.some(r => r.traceId === selectedLogTraceId.value)) {
+      selectedLogTraceId.value = null;
+      selectedLogRecord.value = null;
+    }
+  } catch (e) {
+    console.warn("加载脚本执行日志失败：" + e);
+  }
+};
+
+/** 导出执行记录为 JSON 文件（traceId 随文件走，发给他人即可离线复盘） */
+const downloadExecution = (record) => {
+  if (!record) return;
+  try {
+    const { filename, body } = buildExecutionExport(record);
+    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("导出失败：" + e);
+  }
+};
+
+/* ---------- 版本历史（每次保存自动快照"改之前"的版本，可载入回滚） ---------- */
+const showHistory = ref(false);
+
+/** 当前编辑脚本的历史版本列表（新→旧，最多 10 条） */
+const historyVersions = computed(() => {
+  const cur = scripts.value.find((s) => s.id === form.id);
+  return cur ? buildVersionList(cur) : [];
+});
+
+/** 载入历史版本到编辑器；载入后点"保存"即完成回滚（保存动作会先为当前版本留快照，回滚可撤销） */
+const loadVersion = (ver) => {
+  const cur = scripts.value.find((s) => s.id === form.id);
+  const payload = restoreVersion(cur, ver);
+  if (!payload) {
+    alert("该版本内容为空，无法载入");
+    return;
+  }
+  if (hasUnsavedChanges.value && !confirm("当前有未保存的修改，载入历史版本会覆盖编辑器内容，继续吗？")) {
+    return;
+  }
+  form.name = payload.name;
+  form.content = payload.content;
+  form.defaultParamsJson = JSON.stringify(payload.defaultParams, null, 2);
+  // 画布卡片：版本自带 meta 且 hash 匹配（布局未过期）→ 原样恢复画布；否则按内容重新反解析
+  const verMeta = payload.meta;
+  if (verMeta && Array.isArray(verMeta.cards) && !isMetaStale(payload.content, verMeta)) {
+    canvasCards.value = JSON.parse(JSON.stringify(verMeta.cards));
+    canvasMode.value = true;
+    lastCanvasScript.value = payload.content;
+  } else {
+    canvasCards.value = parseScriptToCards(payload.content);
+    canvasMode.value = false;
+  }
+  showHistory.value = false;
+  alert("已载入历史版本。检查无误后点击「保存」完成回滚；如不想要这次回滚，历史里也保留了回滚前的版本。");
+};
+
+/* ---------- 版本对比（载入前先看"当前 ↔ 该版本"差异） ---------- */
+const diffVerIndex = ref(-1); // 当前展开 diff 的版本下标（historyVersions 的下标）
+
+/** 展开哪一版的 diff；再点一次收起 */
+const toggleDiff = (idx) => {
+  diffVerIndex.value = diffVerIndex.value === idx ? -1 : idx;
+};
+
+/** 对比基准 = 最近一次保存的脚本文本（不含编辑器里未保存的改动） */
+const savedContentOfCurrent = computed(() => {
+  const cur = scripts.value.find((s) => s.id === form.id);
+  return cur ? cur.content : "";
+});
+
+/** 当前展开版本的 diff 行 */
+const activeDiffRows = computed(() => {
+  const ver = historyVersions.value[diffVerIndex.value];
+  if (!ver) return [];
+  return diffLines(savedContentOfCurrent.value, ver.content);
+});
+
+const activeDiffSummary = computed(() => renderDiffRows(activeDiffRows.value));
+
+/* ---------- 脚本搜索 / 执行记录筛选 ---------- */
+const scriptKeyword = ref("");
+const visibleScripts = computed(() => filterScripts(scripts.value, scriptKeyword.value));
+
+const execKeyword = ref("");
+const execStatus = ref(""); // "" 全部 | "ok" 成功 | "fail" 失败
+const visibleExecutions = computed(() =>
+  filterExecutions(executions.value, { status: execStatus.value, keyword: execKeyword.value })
+);
+
+/** 导出当前编辑中的脚本为 JSON 文件（含画布 meta，对方导入后画布布局原样可用） */
+const exportCurrentScript = () => {
+  if (!form.content) {
+    alert("请先填写脚本内容再导出");
+    return;
+  }
+  try {
+    let defaultParams = {};
+    try {
+      defaultParams = JSON.parse(form.defaultParamsJson || "{}");
+    } catch (e) {
+      /* 参数 JSON 不合法时按空参数导出，不阻塞分享 */
+    }
+    // meta 派生方式与保存一致：画布模式用当前卡片，文本模式反解析当前文本
+    const cardsForMeta = canvasMode.value
+      ? JSON.parse(JSON.stringify(canvasCards.value))
+      : parseScriptToCards(form.content);
+    const meta = {
+      cards: cardsForMeta,
+      cardSourceMap: genScriptFromCards(cardsForMeta).sourceMap,
+      contentHash: hashContent(form.content)
+    };
+    const { filename, body } = buildScriptExport({
+      name: form.name,
+      content: form.content,
+      defaultParams,
+      meta
+    });
+    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("导出失败：" + e);
+  }
+};
+
+/** 导入脚本：读 JSON 文件 → POST /api/scripts（id 由后端生成）→ 刷新列表并选中新脚本 */
+const importScriptFromFile = async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = ""; // 允许重复导入同一文件
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const req = parseScriptImport(text);
+    // 重名自动改名：打折规则 → 打折规则（导入）→ 打折规则（导入 2）…避免和已有脚本混淆
+    req.name = dedupeImportName(req.name, scripts.value.map((s) => s.name));
+    const res = await fetch(`${API}/scripts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json;charset=utf-8" },
+      body: JSON.stringify(req)
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const created = await res.json();
+    await loadScripts();
+    if (created && created.id) {
+      const fresh = scripts.value.find((s) => s.id === created.id);
+      if (fresh) selectScript(fresh);
+    }
+    alert(`已导入脚本「${created.name}」`);
+  } catch (e) {
+    alert(String(e.message || e));
+  }
+};
+
+const selectExecution = (r) => {
+  selectedTraceId.value = r.traceId;
+  selectedRecord.value = r;
+};
+
+/** 切换脚本右侧日志详情展开/折叠 */
+const toggleLogDetail = (r) => {
+  if (selectedLogTraceId.value === r.traceId) {
+    // 已展开则折叠
+    selectedLogTraceId.value = null;
+    selectedLogRecord.value = null;
+  } else {
+    selectedLogTraceId.value = r.traceId;
+    selectedLogRecord.value = r;
+  }
+};
+
+/* 展开/折叠 Service 调用节点 */
+const toggleCall = (call) => {
+  call.expanded = !call.expanded;
+};
+
+
+/* ---------- 函数注册表（产品化：可用函数由后端注册表下发，不再写死在前端） ---------- */
+const registryFunctions = ref([...BUILTIN_FUNCTIONS]);
+
+const loadFunctionRegistry = async () => {
+  try {
+    const res = await fetch(`${API}/functions`);
+    if (!res.ok) throw new Error(res.status);
+    const fns = normalizeFunctions(await res.json());
+    if (fns.length) {
+      registryFunctions.value = fns;
+    }
+  } catch (e) {
+    console.warn("函数注册表拉取失败，使用内置函数兜底：" + e);
+  }
+};
+
+/** 函数的参数提示（作参数输入框占位符），未找到返回空串 */
+const funcParamHint = (name) => {
+  const f = registryFunctions.value.find((x) => x.name === name);
+  return f ? f.paramHint : "";
+};
+
+/** 换函数时自动推荐结果变量名（只在变量名为空时接管，不覆盖用户输入） */
+const onFuncChange = (card) => {
+  if (!card.varName && card.func) {
+    card.varName = suggestVarName(card.func);
+  }
+};
+
+/** 表达式/值输入的变量补全候选：入参键 + 画布上已定义的变量 */
+const knownVariables = computed(() => {
+  let paramKeys = [];
+  try {
+    paramKeys = Object.keys(JSON.parse(form.defaultParamsJson || "{}"));
+  } catch (e) {
+    paramKeys = [];
+  }
+  return collectKnownVariables(canvasCards.value, paramKeys);
+});
+
+/** 复制卡片（含内容），插到当前卡片之后 */
+const duplicateCard = (idx) => {
+  const src = canvasCards.value[idx];
+  if (!src) return;
+  const copy = { ...JSON.parse(JSON.stringify(src)), id: newCard("text").id };
+  canvasCards.value.splice(idx + 1, 0, copy);
+};
+
+/** 新增卡片后自动聚焦第一个输入框，拖入即配置 */
+const focusCardFirstInput = (cardId) => {
+  nextTick(() => {
+    const el = document.querySelector(`[data-card-id="${cardId}"] .card-input`);
+    if (el) el.focus();
+  });
+};
+
+/* ---------- 页面切换（布局壳用） ---------- */
+const goView = (v) => { view.value = v; };
+
+export {
+  API,
+  view,
+  scripts,
+  selectedScriptId,
+  editing,
+  form,
+  scriptExecutions,
+  selectedLogTraceId,
+  selectedLogRecord,
+  executions,
+  selectedTraceId,
+  selectedRecord,
+  formatTime,
+  formatJson,
+  compactJson,
+  lineLogGroups,
+  execSummary,
+  truncate,
+  formatExprValue,
+  fmtScalar,
+  inputParams,
+  branchInfo,
+  lineBranch,
+  branchChip,
+  condText,
+  condVerdict,
+  notTakenText,
+  OP_SYMBOLS,
+  lineAssigns,
+  leReturn,
+  callArgs,
+  callResult,
+  rawExprDesc,
+  hoverLineNo,
+  highlightLineNo,
+  highlightedCallStartTime,
+  execSummaryExpanded,
+  expandedCallKeys,
+  topLevelCalls,
+  toggleCallExpand,
+  isCallExpanded,
+  highlightLine,
+  highlightCallByLine,
+  scriptLines,
+  onEditorEnter,
+  onEditorMouseMove,
+  canvasMode,
+  canvasCards,
+  dragPayload,
+  hoverCardId,
+  logHoverCardId,
+  selectedCardId,
+  CARD_TYPES,
+  genCanvas,
+  enterCanvas,
+  lastCanvasScript,
+  addCard,
+  removeCard,
+  moveCard,
+  onPaletteDragStart,
+  onCardDragStart,
+  onCardDrop,
+  cardDepth,
+  TYPE_META,
+  cardIcon,
+  typeClass,
+  cardTitle,
+  cardMapById,
+  cardRangeText,
+  cardOfLineId,
+  structureIssues,
+  issueMap,
+  cardIssue,
+  cardSelected,
+  activeLineSet,
+  onLogLineEnter,
+  onLogLineLeave,
+  cardByIdMap,
+  cardChip,
+  onLogLineClick,
+  loadScripts,
+  selectScript,
+  newScript,
+  cancelEdit,
+  savedSnapshot,
+  refreshSavedSnapshot,
+  hasUnsavedChanges,
+  saveScript,
+  deleteScript,
+  runScript,
+  loadExecutions,
+  loadScriptExecutions,
+  downloadExecution,
+  showHistory,
+  historyVersions,
+  loadVersion,
+  diffVerIndex,
+  toggleDiff,
+  savedContentOfCurrent,
+  activeDiffRows,
+  activeDiffSummary,
+  scriptKeyword,
+  visibleScripts,
+  execKeyword,
+  execStatus,
+  visibleExecutions,
+  exportCurrentScript,
+  importScriptFromFile,
+  selectExecution,
+  toggleLogDetail,
+  toggleCall,
+  registryFunctions,
+  loadFunctionRegistry,
+  funcParamHint,
+  onFuncChange,
+  knownVariables,
+  duplicateCard,
+  focusCardFirstInput,
+  goView
+};
