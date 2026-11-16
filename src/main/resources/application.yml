@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: rule-log
+  jackson:
+    default-property-inclusion: always
+
+app:
+  # 脚本 JSON 文件存放目录。
+  # 相对路径（如 data）锚定“应用所在目录”：开发运行=项目根目录，打 jar 运行=jar 所在目录，
+  # 项目拷到任何位置 data 都跟随，不受启动命令工作目录影响；
+  # 也可填绝对路径固定位置，例如 D:/project/LogTest/data 或 /opt/rulelog/data
+  data-dir: data
+  # 执行记录内存保留上限
+  max-execution-records: 200
+  # 脚本执行超时（毫秒）
+  script-timeout-millis: 5000

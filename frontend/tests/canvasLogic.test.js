@@ -1,0 +1,263 @@
+// 卡片画布纯逻辑单元测试（TDD）
+// 这些函数是「卡片 ↔ 行号映射」正确性的根基，边界必须覆盖：
+// 带引号参数、prepcall 合并、if/else/end 配对、meta 过期校验
+import { describe, it, expect } from "vitest";
+import {
+  sanitizeField,
+  sanitizeExpr,
+  newCard,
+  genScriptFromCards,
+  splitArgsRespectQuotes,
+  parseScriptToCards,
+  hashContent,
+  isMetaStale,
+  validateCardStructure
+} from "../src/composables/canvasLogic.js";
+
+/* ---------- sanitizeField / sanitizeExpr ---------- */
+describe("sanitizeField（名称类字段）", () => {
+  it("替换英文双引号、分号、换行", () => {
+    expect(sanitizeField('a"b')).toBe("a”b");
+    expect(sanitizeField("a;b")).toBe("a；b");
+    expect(sanitizeField("a\nb")).toBe("a b");
+    expect(sanitizeField("a\r\nb")).toBe("a b");
+  });
+  it("null/undefined 安全", () => {
+    expect(sanitizeField(null)).toBe("");
+    expect(sanitizeField(undefined)).toBe("");
+  });
+});
+
+describe("sanitizeExpr（表达式字段：允许字符串字面量）", () => {
+  it("保留英文双引号", () => {
+    expect(sanitizeExpr('"VIP"')).toBe('"VIP"');
+  });
+  it("替换分号与换行", () => {
+    expect(sanitizeExpr('积分 > 100;')).toBe("积分 > 100；");
+    expect(sanitizeExpr("等级\n等级")).toBe("等级 等级");
+  });
+});
+
+/* ---------- newCard ---------- */
+describe("newCard", () => {
+  it("id 唯一", () => {
+    const a = newCard("call");
+    const b = newCard("call");
+    expect(a.id).not.toBe(b.id);
+  });
+  it("prepcall 卡片带默认字段", () => {
+    const c = newCard("prepcall");
+    expect(c.func).toBe("查询用户等级");
+    expect(c).toHaveProperty("prepName", "");
+    expect(c).toHaveProperty("prepExpr", "");
+  });
+});
+
+/* ---------- genScriptFromCards ---------- */
+describe("genScriptFromCards（生成期行号计数）", () => {
+  it("prepcall 卡片生成两行，参数名在两行间共享，区间为 1..2", () => {
+    const card = newCard("prepcall");
+    card.varName = "积分";
+    card.func = "查询用户积分";
+    card.prepName = "查询用户";
+    card.prepExpr = "user";
+    const { script, sourceMap } = genScriptFromCards([card]);
+    const lines = script.split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("查询用户 = user;");
+    expect(lines[1]).toBe("积分 = 查询用户积分(查询用户);");
+    expect(sourceMap).toHaveLength(1);
+    expect(sourceMap[0]).toMatchObject({ cardId: card.id, startLine: 1, endLine: 2, empty: false });
+  });
+
+  it("混合卡片行号与区间正确（对齐内置样例 prepcall_demo 的 11 行）", () => {
+    const mk = (type, fields) => Object.assign(newCard(type), fields);
+    const cards = [
+      mk("prepcall", { varName: "积分", func: "查询用户积分", prepName: "查询用户", prepExpr: "user" }),
+      mk("log", { title: "积分查询完成", exprRaw: '"积分=" + 积分' }),
+      mk("if", { left: "积分", op: "大于", right: "100" }),
+      mk("prepcall", { varName: "折扣", func: "计算折扣", prepName: "折扣依据", prepExpr: "user" }),
+      mk("return", { expr: "积分 * 折扣" }),
+      mk("else"),
+      mk("log", { title: "未达门槛", exprRaw: "积分不足100" }),
+      mk("return", { expr: "积分" }),
+      mk("end")
+    ];
+    const { script, sourceMap } = genScriptFromCards(cards);
+    const lines = script.split("\n");
+    expect(lines).toHaveLength(11);
+    expect(lines[0]).toBe("查询用户 = user;");
+    expect(lines[1]).toBe("积分 = 查询用户积分(查询用户);");
+    expect(lines[3]).toBe("如果 (积分 大于 100) 则 {");
+    expect(lines[4]).toBe("折扣依据 = user;");
+    expect(lines[5]).toBe("折扣 = 计算折扣(折扣依据);");
+    expect(lines[7]).toBe("} 否则 {");
+    expect(lines[10]).toBe("}");
+    // 区间断言
+    const byId = (i) => sourceMap.find((m) => m.cardId === cards[i].id);
+    expect(byId(0)).toMatchObject({ startLine: 1, endLine: 2 });
+    expect(byId(1)).toMatchObject({ startLine: 3, endLine: 3 });
+    expect(byId(3)).toMatchObject({ startLine: 5, endLine: 6 });
+    expect(byId(8)).toMatchObject({ startLine: 11, endLine: 11 });
+  });
+
+  it("空画布返回空脚本", () => {
+    const { script, sourceMap } = genScriptFromCards([]);
+    expect(script).toBe("");
+    expect(sourceMap).toHaveLength(0);
+  });
+
+  it("原样卡 raw 为空时占位（保持旧行为：不生成行，empty=true）", () => {
+    const t = newCard("text");
+    t.raw = "";
+    const { script, sourceMap } = genScriptFromCards([t]);
+    expect(script).toBe("");
+    expect(sourceMap[0].empty).toBe(true);
+  });
+});
+
+/* ---------- splitArgsRespectQuotes ---------- */
+describe("splitArgsRespectQuotes", () => {
+  it("忽略字符串内的逗号", () => {
+    expect(splitArgsRespectQuotes('"标题", "等级=" + 等级')).toEqual(['"标题"', '"等级=" + 等级']);
+    expect(splitArgsRespectQuotes('"a,b", c')).toEqual(['"a,b"', "c"]);
+  });
+});
+
+/* ---------- parseScriptToCards ---------- */
+describe("parseScriptToCards（反解析）", () => {
+  it("识别全部基础卡片类型", () => {
+    const cards = parseScriptToCards(
+      [
+        "等级 = 查询用户等级(user);",
+        "打折积分 = 积分 * 2;",
+        '记录日志("标题", "等级=" + 等级);',
+        "如果 (积分 大于 100) 则 {",
+        "} 否则 {",
+        "}",
+        "返回 打折积分;"
+      ].join("\n")
+    );
+    expect(cards.map((c) => c.type)).toEqual(["call", "calc", "log", "if", "else", "end", "return"]);
+    expect(cards[0]).toMatchObject({ varName: "等级", func: "查询用户等级", param: "user" });
+    expect(cards[2]).toMatchObject({ title: "标题", exprRaw: '"等级=" + 等级' });
+    expect(cards[3]).toMatchObject({ left: "积分", op: "大于", right: "100" });
+  });
+
+  it("复合条件（并且/或者）回落为原样卡", () => {
+    const cards = parseScriptToCards("如果 (等级 等于 VIP 并且 积分 大于 100) 则 {");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].type).toBe("text");
+    expect(cards[0].raw).toContain("并且");
+  });
+
+  it("空行与注释行跳过", () => {
+    const cards = parseScriptToCards("\n// 注释\n返回 0;\n");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].type).toBe("return");
+  });
+
+  it("合并启发式：前置参数行 + 服务调用行 → 一张带参卡", () => {
+    const cards = parseScriptToCards(
+      ["折扣依据 = user;", "折扣 = 计算折扣(折扣依据);"].join("\n")
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0].type).toBe("prepcall");
+    expect(cards[0]).toMatchObject({ prepName: "折扣依据", prepExpr: "user", varName: "折扣", func: "计算折扣" });
+  });
+
+  it("参数名对不上不合并不前（保持 calc + call 两张卡）", () => {
+    const cards = parseScriptToCards(
+      ["折扣依据 = user;", "折扣 = 计算折扣(user);"].join("\n")
+    );
+    expect(cards.map((c) => c.type)).toEqual(["calc", "call"]);
+  });
+
+  it("round-trip：画布生成的脚本反解析再生成，文本逐字一致", () => {
+    const mk = (type, fields) => Object.assign(newCard(type), fields);
+    const cards = [
+      mk("prepcall", { varName: "查询用户", func: "查询用户积分", prepName: "查询条件", prepExpr: "user" }),
+      mk("log", { title: "积分查询完成", exprRaw: '"积分=" + 查询用户' }),
+      mk("if", { left: "积分", op: "大于", right: "100" }),
+      mk("calc", { varName: "打折积分", expr: "积分 * 2" }),
+      mk("return", { expr: "打折积分" }),
+      mk("else"),
+      mk("text", { raw: "复杂条件输出" }),
+      mk("return", { expr: "0" }),
+      mk("end")
+    ];
+    const { script } = genScriptFromCards(cards);
+    const reparsed = parseScriptToCards(script);
+    const regenerated = genScriptFromCards(reparsed).script;
+    expect(regenerated).toBe(script);
+  });
+});
+
+/* ---------- hashContent / isMetaStale ---------- */
+describe("hashContent", () => {
+  it("同一内容 hash 稳定，不同内容 hash 不同", () => {
+    expect(hashContent("等级 = 1;")).toBe(hashContent("等级 = 1;"));
+    expect(hashContent("等级 = 1;")).not.toBe(hashContent("等级 = 2;"));
+  });
+});
+
+describe("isMetaStale（meta 过期校验）", () => {
+  it("无 meta / 无 cards → 不算过期（无映射可用）", () => {
+    expect(isMetaStale("脚本", null)).toBe(false);
+    expect(isMetaStale("脚本", {})).toBe(false);
+    expect(isMetaStale("脚本", { cards: [] })).toBe(false);
+  });
+  it("有 cards 但没有 contentHash（旧版数据）→ 视为过期，走重新反解析", () => {
+    expect(isMetaStale("脚本", { cards: [newCard("calc")] })).toBe(true);
+  });
+  it("hash 一致 → 不过期；不一致 → 过期", () => {
+    const content = "查询用户 = user;";
+    const meta = { cards: [newCard("calc")], contentHash: hashContent(content) };
+    expect(isMetaStale(content, meta)).toBe(false);
+    expect(isMetaStale(content + "\n返回 1;", meta)).toBe(true);
+  });
+});
+
+/* ---------- validateCardStructure（if/else/end 配对） ---------- */
+describe("validateCardStructure", () => {
+  it("合法结构：如果→计算→否则→计算→结束，无问题", () => {
+    const cards = ["if", "calc", "else", "calc", "end"].map((t) => newCard(t));
+    expect(validateCardStructure(cards)).toEqual([]);
+  });
+  it("嵌套如果：if→if→end→end 合法", () => {
+    const cards = ["if", "if", "calc", "end", "end"].map((t) => newCard(t));
+    expect(validateCardStructure(cards)).toEqual([]);
+  });
+  it("结束卡多于如果卡 → 多余的结束卡报问题", () => {
+    const cards = ["end", "end"].map((t) => newCard(t));
+    const issues = validateCardStructure(cards);
+    expect(issues).toHaveLength(2);
+    expect(issues.every((i) => i.message.includes("如果"))).toBe(true);
+  });
+  it("否则卡缺如果卡 → 报问题", () => {
+    const cards = ["else", "end"].map((t) => newCard(t));
+    const issues = validateCardStructure(cards);
+    expect(issues.length).toBeGreaterThanOrEqual(1);
+    expect(issues.some((i) => i.cardId === cards[0].id)).toBe(true);
+  });
+  it("同一如果块出现两个否则 → 第二个否则报问题", () => {
+    const cards = ["if", "else", "else", "end"].map((t) => newCard(t));
+    const issues = validateCardStructure(cards);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].cardId).toBe(cards[2].id);
+  });
+  it("如果块未结束（缺结束卡）→ 如果卡报问题", () => {
+    const cards = ["if", "calc"].map((t) => newCard(t));
+    const issues = validateCardStructure(cards);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].cardId).toBe(cards[0].id);
+    expect(issues[0].message).toContain("结束");
+  });
+  it("问题条目包含 cardId、index、message 三个字段", () => {
+    const cards = ["end"].map((t) => newCard(t));
+    const issues = validateCardStructure(cards);
+    expect(issues[0]).toHaveProperty("cardId");
+    expect(issues[0]).toHaveProperty("index", 0);
+    expect(issues[0]).toHaveProperty("message");
+  });
+});
