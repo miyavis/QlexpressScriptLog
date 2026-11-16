@@ -80,7 +80,8 @@ src/main/java/com/example/rulelog/
 ├── aspect/
 │   └── ServiceCallAspect.java       AOP 自动记录 Service 入口/出口
 ├── service/
-│   └── RuleExecutionService.java    执行入口：生成 traceId → 调 QLExpress → 聚合日志 → 按行号分组 → 存记录
+│   ├── RuleExecutionService.java    执行入口：生成 traceId → 调 QLExpress → 聚合日志 → 按行号分组 → 存记录
+│   └── ScriptVersionService.java    脚本版本历史（修改前自动快照，最新在前，最多 10 个，可单测）
 ├── store/
 │   ├── ScriptStore.java             脚本 JSON 文件持久化（data/scripts.json）
 │   └── ExecutionRecordStore.java    执行记录内存库（LinkedHashMap，按时间倒序）
@@ -103,8 +104,7 @@ src/main/java/com/example/rulelog/
     ├── JsonUtils.java               Jackson 工具
     └── ErrorSummarizer.java         执行错误中文摘要器（行号提取 + 中文分类 + 出错行内容 + 保留原始信息）
 ```
-
-前端（`frontend/`）：Vite 4 + Vue 3.4，页面主体 `src/App.vue`；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`scriptTransfer.js` 脚本导出/导入、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 52 个用例）。
+前端（`frontend/`）：Vite 4 + Vue 3.4，页面主体 `src/App.vue`；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`scriptTransfer.js` 脚本导出/导入、`versionHistory.js` 版本历史、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 64 个用例）。
 
 ---
 
@@ -424,6 +424,24 @@ for each card in cards:
 - **导出**：编辑区操作栏「导出脚本」→ 下载 `规则脚本_<名称>_<时间>.json`，正文含 `name / content / defaultParams / meta（画布卡片+行号映射+contentHash）`，meta 派生方式与保存一致。**不带内部 id/时间戳**（导入时反正会重新生成）。
 - **导入**：脚本列表工具栏「导入脚本」→ 选 JSON 文件 → 校验后 `POST /api/scripts`（**id 由后端新生成**，不会覆盖原脚本）→ 自动选中新脚本开始编辑。meta 一起导入，导入后画布布局原样可用。
 - **兼容性**：既认平台导出的带包装格式，也认裸的 `{name, content, ...}` 对象；非法 JSON / 缺 content 抛中文错误提示；`defaultParams` 不是对象归一为空对象，`meta` 非法则丢弃（打开时以脚本文本为真相重新反解析）。
+- **重名自动改名**：导入脚本与已有脚本同名时自动加后缀——`打折规则` → `打折规则（导入）` → `打折规则（导入 2）`…不覆盖、不混淆。
+
+### 脚本版本历史（保存即快照，回滚可撤销）
+
+业务人员改坏脚本要能反悔。**不加新接口**：`Script` 增加 `versions` 字段，每次 PUT 修改前自动快照"改之前的版本"（`ScriptVersionService.record`，新快照在最前，最多保留 **10** 个，随 scripts.json 持久化）。
+
+```
+修改脚本（PUT /api/scripts/{id}）
+  └─ ScriptVersionService.record(已有版本, 改之前的脚本)   ← 先快照，后覆盖
+      快照内容：name / content / defaultParams / meta（画布布局可原样恢复）
+  └─ 再应用新内容并落盘
+```
+
+前端编辑区「🕘 历史版本」面板：
+
+- 列表新→旧，展示名称/时间/内容首行预览，最多 10 条（`versionHistory.js` 纯逻辑，可单测）。
+- **回滚 = 「载入此版本」+「保存」两步**：载入时若版本自带 meta 且 contentHash 匹配则原样恢复画布布局，否则按内容重新反解析；载入后点保存才生效，且保存动作会为"回滚前那一刻"再留快照——**回滚永远可撤销**。
+- 编辑器有未保存修改时，载入前会先弹确认，避免静默覆盖。
 
 ### 现有能力在卡片化场景下的表现
 
@@ -448,7 +466,7 @@ for each card in cards:
 ## 注意事项与扩展建议
 
 1. **执行记录仅保存在内存**：`ExecutionRecordStore` 使用 `ConcurrentHashMap`，重启后清空。生产环境建议替换为数据库（如 MySQL / PostgreSQL）持久化。
-2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出/脚本导入导出都有单元测试，改动 `frontend/src/composables/*` 后请跑 `cd frontend && npm run test`（52 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端单测 `mvn test`（函数注册表 + 错误摘要器，共 16 个用例）。
+2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出/脚本导入导出/版本历史都有单元测试，改动 `frontend/src/composables/*` 后请跑 `cd frontend && npm run test`（64 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端单测 `mvn test`（函数注册表 + 错误摘要器 + 版本历史，共 22 个用例）。
 3. **脚本文件路径（换机器必看）**：`data` 为相对路径时锚定**应用所在目录**（开发运行=项目根目录；打 jar 运行=jar 所在目录），项目拷到任何机器/位置都能找到，不受“从哪个目录启动”影响。给别人的机器上请**一起拷 `data/scripts.json`**，否则对方首次启动只会看到内置示例脚本；若该文件损坏/手工编辑写坏，程序会在日志里备份为 `scripts.json.bak-时间戳` 并用内置示例启动，修正后重命名回 `scripts.json` 重启即可恢复。启动日志会打印“脚本数据目录（解析后绝对路径）”，可用来确认实际读取位置。
 4. **安全策略**：`Express4Engine` 使用 `QLSecurityStrategy.open()`，允许脚本访问所有 Java 类。生产环境建议改为白名单策略 `QLSecurityStrategy.whiteList(...)`，仅放行业务需要的 Service 方法。
 5. **脚本超时**：默认 5000 ms，可在 `application.yml` 的 `app.script-timeout-millis` 调整。

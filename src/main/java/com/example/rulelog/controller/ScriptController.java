@@ -3,6 +3,7 @@ package com.example.rulelog.controller;
 import com.example.rulelog.exception.NotFoundException;
 import com.example.rulelog.model.Script;
 import com.example.rulelog.model.ScriptRequest;
+import com.example.rulelog.service.ScriptVersionService;
 import com.example.rulelog.store.ScriptStore;
 import org.springframework.web.bind.annotation.*;
 
@@ -58,13 +59,15 @@ public class ScriptController {
         return script;
     }
 
-    /** 修改脚本 */
+    /** 修改脚本（修改前自动快照"改之前的版本"，供历史回滚） */
     @PutMapping("/{id}")
     public Script update(@PathVariable String id, @RequestBody ScriptRequest request) {
         Script existing = scriptStore.get(id);
         if (existing == null) {
             throw new NotFoundException("脚本不存在: " + id);
         }
+        // 版本历史：先记录"改之前"的完整快照（含画布 meta），新快照在最前，最多保留 10 个
+        existing.setVersions(ScriptVersionService.record(existing.getVersions(), existing));
         existing.setName(request.getName());
         existing.setContent(request.getContent());
         existing.setDefaultParams(request.getDefaultParams());

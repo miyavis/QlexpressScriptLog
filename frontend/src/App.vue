@@ -73,10 +73,34 @@
                 <div class="side-toolbar">
                   <button class="mode-btn" :class="{ tabon: !canvasMode }" @click="canvasMode = false">文本编辑</button>
                   <button class="mode-btn" :class="{ tabon: canvasMode }" @click="enterCanvas()">🎴 卡片画布</button>
+                  <button
+                    class="mode-btn"
+                    :class="{ tabon: showHistory }"
+                    :disabled="!form.id"
+                    @click="showHistory = !showHistory"
+                    title="每次保存自动快照“改之前”的版本，最多保留 10 个"
+                  >🕘 历史版本</button>
                   <span v-if="canvasMode" class="hint inline-hint">
                     <template v-if="structureIssues.length">⚠️ 画布结构有 {{ structureIssues.length }} 个问题（红色卡片），请先修正</template>
                     <template v-else>卡片改动自动生成脚本；悬停/点击右侧日志行会高亮对应卡片</template>
                   </span>
+                </div>
+                <div v-if="showHistory && form.id" class="version-panel">
+                  <div class="version-head">
+                    <span>历史版本（新→旧，最多 10 个；保存动作会自动为“改之前”留快照）</span>
+                    <button class="card-btn" @click="showHistory = false" title="收起">✕</button>
+                  </div>
+                  <p v-if="historyVersions.length === 0" class="empty">暂无历史版本：修改并保存一次后，这里就会出现“改之前”的版本。</p>
+                  <ul v-else class="version-list">
+                    <li v-for="(ver, vi) in historyVersions" :key="vi">
+                      <div class="version-info">
+                        <div class="version-name">{{ ver.name || "未命名" }} <span class="version-time">{{ formatTime(ver.savedAt) }}</span></div>
+                        <div class="version-preview">{{ (ver.content || "").split("\n")[0] }}</div>
+                      </div>
+                      <button class="btn-secondary sm" @click="loadVersion(ver)">载入此版本</button>
+                    </li>
+                  </ul>
+                  <div class="hint">回滚 = 载入后点「保存」。回滚前的那一刻也会自动存进历史，反悔随时可再载回。</div>
                 </div>
                 <template v-if="!canvasMode">
                   <div class="form-row full tight">
@@ -586,7 +610,8 @@ import {
   BUILTIN_FUNCTIONS
 } from "./composables/functionRegistry.js";
 import { buildExecutionExport } from "./composables/exportRecord.js";
-import { buildScriptExport, parseScriptImport } from "./composables/scriptTransfer.js";
+import { buildScriptExport, parseScriptImport, dedupeImportName } from "./composables/scriptTransfer.js";
+import { buildVersionList, restoreVersion } from "./composables/versionHistory.js";
 
 const API = "/api";
 
@@ -1400,6 +1425,43 @@ const downloadExecution = (record) => {
   }
 };
 
+/* ---------- 版本历史（每次保存自动快照"改之前"的版本，可载入回滚） ---------- */
+const showHistory = ref(false);
+
+/** 当前编辑脚本的历史版本列表（新→旧，最多 10 条） */
+const historyVersions = computed(() => {
+  const cur = scripts.value.find((s) => s.id === form.id);
+  return cur ? buildVersionList(cur) : [];
+});
+
+/** 载入历史版本到编辑器；载入后点"保存"即完成回滚（保存动作会先为当前版本留快照，回滚可撤销） */
+const loadVersion = (ver) => {
+  const cur = scripts.value.find((s) => s.id === form.id);
+  const payload = restoreVersion(cur, ver);
+  if (!payload) {
+    alert("该版本内容为空，无法载入");
+    return;
+  }
+  if (hasUnsavedChanges.value && !confirm("当前有未保存的修改，载入历史版本会覆盖编辑器内容，继续吗？")) {
+    return;
+  }
+  form.name = payload.name;
+  form.content = payload.content;
+  form.defaultParamsJson = JSON.stringify(payload.defaultParams, null, 2);
+  // 画布卡片：版本自带 meta 且 hash 匹配（布局未过期）→ 原样恢复画布；否则按内容重新反解析
+  const verMeta = payload.meta;
+  if (verMeta && Array.isArray(verMeta.cards) && !isMetaStale(payload.content, verMeta)) {
+    canvasCards.value = JSON.parse(JSON.stringify(verMeta.cards));
+    canvasMode.value = true;
+    lastCanvasScript.value = payload.content;
+  } else {
+    canvasCards.value = parseScriptToCards(payload.content);
+    canvasMode.value = false;
+  }
+  showHistory.value = false;
+  alert("已载入历史版本。检查无误后点击「保存」完成回滚；如不想要这次回滚，历史里也保留了回滚前的版本。");
+};
+
 /** 导出当前编辑中的脚本为 JSON 文件（含画布 meta，对方导入后画布布局原样可用） */
 const exportCurrentScript = () => {
   if (!form.content) {
@@ -1450,6 +1512,8 @@ const importScriptFromFile = async (ev) => {
   try {
     const text = await file.text();
     const req = parseScriptImport(text);
+    // 重名自动改名：打折规则 → 打折规则（导入）→ 打折规则（导入 2）…避免和已有脚本混淆
+    req.name = dedupeImportName(req.name, scripts.value.map((s) => s.name));
     const res = await fetch(`${API}/scripts`, {
       method: "POST",
       headers: { "Content-Type": "application/json;charset=utf-8" },
@@ -2153,6 +2217,25 @@ input:readonly { background: #f3f4f6; color: #6b7280; }
 
 /* ---------- 卡片画布 ---------- */
 .side-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.mode-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.version-panel {
+  border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+  background: #fafbfc;
+}
+.version-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.version-list { list-style: none; max-height: 220px; overflow-y: auto; }
+.version-list li {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 6px 4px; border-bottom: 1px dashed #e5e7eb;
+}
+.version-list li:last-child { border-bottom: none; }
+.version-info { min-width: 0; }
+.version-name { font-size: 13px; color: #111827; font-weight: 500; }
+.version-time { font-size: 11px; color: #9ca3af; font-weight: 400; margin-left: 6px; }
+.version-preview {
+  font-size: 11.5px; color: #6b7280; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 420px; font-family: Consolas, "Courier New", monospace;
+}
 .mode-btn { padding: 5px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12.5px; color: #374151; }
 .mode-btn:hover { border-color: #2563eb; color: #2563eb; }
 .mode-btn.tabon { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }

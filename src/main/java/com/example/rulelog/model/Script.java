@@ -1,6 +1,8 @@
 package com.example.rulelog.model;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -25,6 +27,9 @@ public class Script {
     private long createdAt;
 
     private long updatedAt;
+
+    /** 历史版本（新→旧，最多 10 条）：每次修改前自动快照，回滚用 */
+    private List<ScriptVersion> versions = new ArrayList<>();
 
     public String getId() {
         return id;
@@ -80,5 +85,13 @@ public class Script {
 
     public void setUpdatedAt(long updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public List<ScriptVersion> getVersions() {
+        return versions;
+    }
+
+    public void setVersions(List<ScriptVersion> versions) {
+        this.versions = versions == null ? new ArrayList<>() : versions;
     }
 }

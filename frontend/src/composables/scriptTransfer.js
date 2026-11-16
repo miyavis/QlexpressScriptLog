@@ -68,3 +68,25 @@ export const parseScriptImport = (text) => {
   }
   return req;
 };
+
+/**
+ * 导入脚本重名自动改名，避免与已有脚本混淆：
+ * 名称未被占用 → 原样；重名 → 「名称（导入）」；后缀也重名 → 「名称（导入 2）」「（导入 3）」…
+ */
+export const dedupeImportName = (name, existingNames) => {
+  const base = name && String(name).trim() ? String(name).trim() : "导入的脚本";
+  const taken = new Set((Array.isArray(existingNames) ? existingNames : []).map((n) => String(n)));
+  if (!taken.has(base)) {
+    return base;
+  }
+  const first = `${base}（导入）`;
+  if (!taken.has(first)) {
+    return first;
+  }
+  for (let i = 2; ; i++) {
+    const candidate = `${base}（导入 ${i}）`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+  }
+};
