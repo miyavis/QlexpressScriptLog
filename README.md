@@ -132,7 +132,7 @@ AOP 负责 Service 方法入口/出口，`StepLogger.log()` 负责方法内部�
 
 ## 环境要求
 
-- **后端**：JDK 8 + Maven 3.9+
+- **后端**：JDK 8（构建用 Gradle Wrapper 7.6.4，无需本机安装 Gradle）
 - **前端**：Node.js 16+（Vite 4 要求，Node 16 可用）+ npm
 
 ---
@@ -143,10 +143,10 @@ AOP 负责 Service 方法入口/出口，`StepLogger.log()` 负责方法内部�
 
 ```bash
 cd D:\project\LogTest
-mvn spring-boot:run
+./gradlew bootRun          # Windows 用 gradlew.bat bootRun
 ```
 
-> Windows PowerShell 中文日志乱码：先执行 `chcp 65001` 把控制台切到 UTF-8 再启动（pom 已配置 JVM 以 UTF-8 输出）。Jar 方式运行同理：`java -Dfile.encoding=UTF-8 -jar xxx.jar`。
+> Windows PowerShell 中文日志乱码：先执行 `chcp 65001` 把控制台切到 UTF-8 再启动（bootRun 已配置 JVM 以 UTF-8 输出）。Jar 方式运行同理：`java -Dfile.encoding=UTF-8 -jar xxx.jar`。
 
 后端启动成功后，监听 `http://localhost:8080`。首次启动会在 `data/scripts.json` 写入三条示例脚本。
 
@@ -165,12 +165,32 @@ npm run dev
 ### 3. 单 jar 部署（给他人分发，推荐）
 
 ```bash
-cd frontend && npm run build   # 先构建前端 → frontend/dist
-cd .. && mvn package -DskipTests   # 打包时自动把 dist 拷进 jar 的 static 目录
-java -Dfile.encoding=UTF-8 -jar target/rule-log-1.0.0.jar
+./gradlew buildFrontend bootJar    # 一条命令：构建前端 dist → 内嵌进 jar
+java -Dfile.encoding=UTF-8 -jar build/libs/rule-log-1.0.0.jar
 ```
 
-之后**一个 jar 同时提供 API 和前端页面**：浏览器打开 `http://localhost:8080` 即可使用（页面与接口同端口，无需 Nginx）。`data/` 目录会自动出现在 jar 所在目录。dist 不存在时打包照常成功（纯 API jar），开发时用 `npm run dev`（5173）不受影响。
+（也可先 `cd frontend && npm run build`，再 `./gradlew bootJar`——dist 已存在时 bootJar 直接内嵌，不存在时打纯 API jar，构建不报错。）
+
+之后**一个 jar 同时提供 API 和前端页面**：浏览器打开 `http://localhost:8080` 即可使用（页面与接口同端口，无需 Nginx）。`data/` 目录会自动出现在 jar 所在目录。开发时用 `npm run dev`（5173）不受影响。
+
+### 4. GitHub 自动构建与发布（CI/CD）
+
+仓库内置两个工作流（`.github/workflows/`）：
+
+| 工作流 | 触发 | 做什么 |
+|--------|------|--------|
+| **ci.yml** | 每次 push / PR | 后端单测（JDK 8 + Gradle）、前端单测与构建（Node 16），并行两个 job |
+| **release.yml** | 推送 `v*` 标签（如 `v1.0.0`），或在 Actions 页手动触发 | 前后端全量单测 → 构建前端 → 打单 jar → **发布 GitHub Release 并附上 jar** |
+
+**发版三步**：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+# → Actions 自动构建，几分钟后 GitHub Releases 页出现 rule-log-1.0.0.jar
+```
+
+**服务器部署**：从 GitHub Releases 下载 jar → 拷到服务器 → `java -Dfile.encoding=UTF-8 -jar rule-log-1.0.0.jar`（需 JRE 8+）。`data/` 目录会自动生成在 jar 旁边。也可以注册成 systemd 服务或用 `nohup` 后台运行。
 
 ---
 
@@ -469,11 +489,11 @@ for each card in cards:
 ## 注意事项与扩展建议
 
 1. **执行记录仅保存在内存**：`ExecutionRecordStore` 使用 `ConcurrentHashMap`，重启后清空。生产环境建议替换为数据库（如 MySQL / PostgreSQL）持久化。
-2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出/脚本导入导出/版本历史/行级 diff/列表筛选/store 导出完整性都有单元测试，改动 `frontend/src/composables/*` 或 `frontend/src/store.js` 后请跑 `cd frontend && npm run test`（83 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端单测 `mvn test`（函数注册表 + 错误摘要器 + 版本历史，共 22 个用例）。
+2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出/脚本导入导出/版本历史/行级 diff/列表筛选/store 导出完整性都有单元测试，改动 `frontend/src/composables/*` 或 `frontend/src/store.js` 后请跑 `cd frontend && npm run test`（83 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端单测 `./gradlew test`（函数注册表 + 错误摘要器 + 版本历史，共 22 个用例）。
 3. **脚本文件路径（换机器必看）**：`data` 为相对路径时锚定**应用所在目录**（开发运行=项目根目录；打 jar 运行=jar 所在目录），项目拷到任何机器/位置都能找到，不受“从哪个目录启动”影响。给别人的机器上请**一起拷 `data/scripts.json`**，否则对方首次启动只会看到内置示例脚本；若该文件损坏/手工编辑写坏，程序会在日志里备份为 `scripts.json.bak-时间戳` 并用内置示例启动，修正后重命名回 `scripts.json` 重启即可恢复。启动日志会打印“脚本数据目录（解析后绝对路径）”，可用来确认实际读取位置。
 4. **安全策略**：`Express4Engine` 使用 `QLSecurityStrategy.open()`，允许脚本访问所有 Java 类。生产环境建议改为白名单策略 `QLSecurityStrategy.whiteList(...)`，仅放行业务需要的 Service 方法。
 5. **脚本超时**：默认 5000 ms，可在 `application.yml` 的 `app.script-timeout-millis` 调整。
-6. **前端构建**：`npm run build` 会输出静态资源到 `frontend/dist`；配合 `mvn package` 可打进 jar 实现**单 jar 部署**（见快速启动第 3 节）。单独部署到 Nginx 也支持。
+6. **前端构建**：`npm run build` 会输出静态资源到 `frontend/dist`；配合 `./gradlew bootJar`（或 `./gradlew buildFrontend bootJar` 一条龙）可打进 jar 实现**单 jar 部署**（见快速启动第 3 节）。单独部署到 Nginx 也支持。
 7. **AOP 边界**：Spring AOP 拦截不了同一个 Bean 内部的自调用。Service 内部的关键业务步骤应由开发者显式调用 `StepLogger.log(步骤名, 详情)`。
 
 ---
