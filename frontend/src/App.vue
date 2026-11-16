@@ -19,6 +19,14 @@
             <h2>脚本列表</h2>
             <div class="toolbar">
               <button class="btn-primary" @click="newScript">+ 新建脚本</button>
+              <button class="btn-secondary" @click="$refs.scriptImportFile.click()">导入脚本</button>
+              <input
+                ref="scriptImportFile"
+                type="file"
+                accept=".json,application/json"
+                style="display: none"
+                @change="importScriptFromFile"
+              />
             </div>
           </div>
           <ul class="script-list horiz">
@@ -357,6 +365,7 @@
             <div class="form-actions">
               <button class="btn-primary" @click="saveScript">保存</button>
               <button class="btn-success" @click="runScript">执行脚本</button>
+              <button class="btn-secondary" @click="exportCurrentScript" title="导出成 JSON 文件，发给他人可导入">导出脚本</button>
               <button class="btn-delete" @click="deleteScript(form.id)">删除</button>
               <button class="btn-secondary" @click="cancelEdit">取消</button>
             </div>
@@ -577,6 +586,7 @@ import {
   BUILTIN_FUNCTIONS
 } from "./composables/functionRegistry.js";
 import { buildExecutionExport } from "./composables/exportRecord.js";
+import { buildScriptExport, parseScriptImport } from "./composables/scriptTransfer.js";
 
 const API = "/api";
 
@@ -1387,6 +1397,74 @@ const downloadExecution = (record) => {
     URL.revokeObjectURL(url);
   } catch (e) {
     alert("导出失败：" + e);
+  }
+};
+
+/** 导出当前编辑中的脚本为 JSON 文件（含画布 meta，对方导入后画布布局原样可用） */
+const exportCurrentScript = () => {
+  if (!form.content) {
+    alert("请先填写脚本内容再导出");
+    return;
+  }
+  try {
+    let defaultParams = {};
+    try {
+      defaultParams = JSON.parse(form.defaultParamsJson || "{}");
+    } catch (e) {
+      /* 参数 JSON 不合法时按空参数导出，不阻塞分享 */
+    }
+    // meta 派生方式与保存一致：画布模式用当前卡片，文本模式反解析当前文本
+    const cardsForMeta = canvasMode.value
+      ? JSON.parse(JSON.stringify(canvasCards.value))
+      : parseScriptToCards(form.content);
+    const meta = {
+      cards: cardsForMeta,
+      cardSourceMap: genScriptFromCards(cardsForMeta).sourceMap,
+      contentHash: hashContent(form.content)
+    };
+    const { filename, body } = buildScriptExport({
+      name: form.name,
+      content: form.content,
+      defaultParams,
+      meta
+    });
+    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("导出失败：" + e);
+  }
+};
+
+/** 导入脚本：读 JSON 文件 → POST /api/scripts（id 由后端生成）→ 刷新列表并选中新脚本 */
+const importScriptFromFile = async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = ""; // 允许重复导入同一文件
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const req = parseScriptImport(text);
+    const res = await fetch(`${API}/scripts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json;charset=utf-8" },
+      body: JSON.stringify(req)
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const created = await res.json();
+    await loadScripts();
+    if (created && created.id) {
+      const fresh = scripts.value.find((s) => s.id === created.id);
+      if (fresh) selectScript(fresh);
+    }
+    alert(`已导入脚本「${created.name}」`);
+  } catch (e) {
+    alert(String(e.message || e));
   }
 };
 

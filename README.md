@@ -100,10 +100,11 @@ src/main/java/com/example/rulelog/
 │   ├── NotFoundException.java
 │   └── BadRequestException.java
 └── util/
-    └── JsonUtils.java               Jackson 工具
+    ├── JsonUtils.java               Jackson 工具
+    └── ErrorSummarizer.java         执行错误中文摘要器（行号提取 + 中文分类 + 出错行内容 + 保留原始信息）
 ```
 
-前端（`frontend/`）：Vite 4 + Vue 3.4，共 5 个文件（`index.html`、`package.json`、`vite.config.js`、`src/main.js`、`src/App.vue`）。
+前端（`frontend/`）：Vite 4 + Vue 3.4，页面主体 `src/App.vue`；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`scriptTransfer.js` 脚本导出/导入、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 52 个用例）。
 
 ---
 
@@ -402,6 +403,28 @@ for each card in cards:
 - **执行前未保存提醒**：脚本有未保存修改时，执行会先提示"保存后执行"，避免执行记录与脚本版本错位。
 - **日志行头卡片名标签**：画布模式下日志行头显示所属卡片 chip（悬停可见完整标题）；点击日志行会**滚动定位**到对应卡片。
 
+### 执行错误中文化（ErrorSummarizer）
+
+业务人员看不懂 QLExpress 的英文堆栈，执行失败时 `errorMessage` 存的是**中文摘要**：
+
+```
+原始英文异常 ──ErrorSummarizer.summarize(异常, 脚本行列表)──► 摘要
+   ① 行号提取：message 中的 "line N"（超界或缺失则不显示）
+   ② 中文分类：NullPointerException→空值错误 / ClassCastException→类型不匹配
+              / ArithmeticException→数值计算错误 / not found→变量或函数未定义 / 其余→规则运行错误
+   ③ 出错行内容：按行号带出脚本该行原文
+   ④ 原始英文信息保留在"（原始信息：…）"尾部，开发排查不受影响
+```
+
+示例：`第 3 行出错：空值错误（原始信息：... Cannot invoke ...）（出错行内容：打折积分 = 积分 * 2）`。
+`errorType` 字段仍是三分类：语法错误 / 超时 / 规则运行错误。
+
+### 脚本导出/导入（scriptTransfer.js）
+
+- **导出**：编辑区操作栏「导出脚本」→ 下载 `规则脚本_<名称>_<时间>.json`，正文含 `name / content / defaultParams / meta（画布卡片+行号映射+contentHash）`，meta 派生方式与保存一致。**不带内部 id/时间戳**（导入时反正会重新生成）。
+- **导入**：脚本列表工具栏「导入脚本」→ 选 JSON 文件 → 校验后 `POST /api/scripts`（**id 由后端新生成**，不会覆盖原脚本）→ 自动选中新脚本开始编辑。meta 一起导入，导入后画布布局原样可用。
+- **兼容性**：既认平台导出的带包装格式，也认裸的 `{name, content, ...}` 对象；非法 JSON / 缺 content 抛中文错误提示；`defaultParams` 不是对象归一为空对象，`meta` 非法则丢弃（打开时以脚本文本为真相重新反解析）。
+
 ### 现有能力在卡片化场景下的表现
 
 | 能力 | 依赖 | 卡片化下 |
@@ -425,7 +448,7 @@ for each card in cards:
 ## 注意事项与扩展建议
 
 1. **执行记录仅保存在内存**：`ExecutionRecordStore` 使用 `ConcurrentHashMap`，重启后清空。生产环境建议替换为数据库（如 MySQL / PostgreSQL）持久化。
-2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出都有单元测试，改动 `frontend/src/composables/*` 后请跑 `cd frontend && npm run test`（42 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端注册表单测 `mvn test -Dtest=FunctionAliasRegistryTest`。
+2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出/脚本导入导出都有单元测试，改动 `frontend/src/composables/*` 后请跑 `cd frontend && npm run test`（52 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端单测 `mvn test`（函数注册表 + 错误摘要器，共 16 个用例）。
 3. **脚本文件路径（换机器必看）**：`data` 为相对路径时锚定**应用所在目录**（开发运行=项目根目录；打 jar 运行=jar 所在目录），项目拷到任何机器/位置都能找到，不受“从哪个目录启动”影响。给别人的机器上请**一起拷 `data/scripts.json`**，否则对方首次启动只会看到内置示例脚本；若该文件损坏/手工编辑写坏，程序会在日志里备份为 `scripts.json.bak-时间戳` 并用内置示例启动，修正后重命名回 `scripts.json` 重启即可恢复。启动日志会打印“脚本数据目录（解析后绝对路径）”，可用来确认实际读取位置。
 4. **安全策略**：`Express4Engine` 使用 `QLSecurityStrategy.open()`，允许脚本访问所有 Java 类。生产环境建议改为白名单策略 `QLSecurityStrategy.whiteList(...)`，仅放行业务需要的 Service 方法。
 5. **脚本超时**：默认 5000 ms，可在 `application.yml` 的 `app.script-timeout-millis` 调整。

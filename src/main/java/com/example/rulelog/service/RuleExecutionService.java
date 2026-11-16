@@ -16,9 +16,11 @@ import com.example.rulelog.trace.RuleTraceContext;
 import com.example.rulelog.trace.StepLogger;
 import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.store.ScriptStore;
+import com.example.rulelog.util.ErrorSummarizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,7 +103,8 @@ public class RuleExecutionService {
             record.setSuccess(false);
             record.setResult(null);
             record.setErrorType(describeErrorType(e));
-            record.setErrorMessage(e.getMessage() == null ? e.toString() : e.getMessage());
+            // errorMessage 存中文摘要（第几行/什么错/出错行内容），原始英文信息保留在摘要尾部供开发排查
+            record.setErrorMessage(ErrorSummarizer.summarize(e, splitLines(script.getContent())).detail);
         } finally {
             StepLogger.Collector collector = StepLogger.drainAndRemove();
             record.setCalls(collector.getRootCalls());
@@ -334,5 +337,13 @@ public class RuleExecutionService {
             return "超时";
         }
         return "规则运行错误";
+    }
+
+    /** 脚本文本按行拆分（ErrorSummarizer 用它带出出错行的原文） */
+    private List<String> splitLines(String content) {
+        if (content == null || content.isEmpty()) {
+            return null;
+        }
+        return Arrays.asList(content.split("\n", -1));
     }
 }
