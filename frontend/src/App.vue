@@ -27,11 +27,17 @@
                 style="display: none"
                 @change="importScriptFromFile"
               />
+              <input
+                v-model="scriptKeyword"
+                class="search-input"
+                placeholder="🔍 搜索脚本名称 / ID"
+              />
+              <span v-if="scriptKeyword" class="count">{{ visibleScripts.length }}/{{ scripts.length }}</span>
             </div>
           </div>
           <ul class="script-list horiz">
             <li
-              v-for="s in scripts"
+              v-for="s in visibleScripts"
               :key="s.id"
               :class="{ selected: selectedScriptId === s.id }"
               @click="selectScript(s)"
@@ -44,6 +50,7 @@
             </li>
           </ul>
           <p v-if="scripts.length === 0" class="empty">暂无脚本，点击右上角「+ 新建脚本」创建。</p>
+          <p v-else-if="visibleScripts.length === 0" class="empty">没有匹配「{{ scriptKeyword }}」的脚本。</p>
         </div>
 
         <div class="panel-right">
@@ -97,7 +104,25 @@
                         <div class="version-name">{{ ver.name || "未命名" }} <span class="version-time">{{ formatTime(ver.savedAt) }}</span></div>
                         <div class="version-preview">{{ (ver.content || "").split("\n")[0] }}</div>
                       </div>
-                      <button class="btn-secondary sm" @click="loadVersion(ver)">载入此版本</button>
+                      <div class="version-actions">
+                        <button class="btn-secondary sm" @click="toggleDiff(vi)">{{ diffVerIndex === vi ? "收起对比" : "对比" }}</button>
+                        <button class="btn-secondary sm" @click="loadVersion(ver)">载入此版本</button>
+                      </div>
+                    </li>
+                    <li v-if="diffVerIndex >= 0" class="diff-block" @dblclick.stop>
+                      <div class="diff-head">
+                        <span>当前 ↔ {{ historyVersions[diffVerIndex].name || "该版本" }}：
+                          <template v-if="activeDiffSummary.changed">
+                            <span class="diff-add-n">＋{{ activeDiffSummary.addCount }}</span>
+                            <span class="diff-remove-n">－{{ activeDiffSummary.removeCount }}</span>
+                          </template>
+                          <template v-else>内容完全一致</template>
+                        </span>
+                        <span class="diff-legend"><i class="lg lg-add">＋</i>回滚会加入 <i class="lg lg-remove">－</i>回滚会删除</span>
+                      </div>
+                      <div class="diff-body">
+                        <div v-for="(row, ri) in activeDiffRows" :key="ri" :class="['diff-row', row.type]">{{ row.text || " " }}</div>
+                      </div>
                     </li>
                   </ul>
                   <div class="hint">回滚 = 载入后点「保存」。回滚前的那一刻也会自动存进历史，反悔随时可再载回。</div>
@@ -404,11 +429,17 @@
           <h2>执行记录</h2>
           <div class="toolbar">
             <button class="btn-secondary" @click="loadExecutions">刷新</button>
-            <span class="count">{{ executions.length }} 条记录</span>
+            <select v-model="execStatus" class="search-input narrow" title="按状态筛选">
+              <option value="">全部状态</option>
+              <option value="ok">只看成功</option>
+              <option value="fail">只看失败</option>
+            </select>
+            <input v-model="execKeyword" class="search-input" placeholder="🔍 traceId / 脚本名" />
+            <span class="count">{{ visibleExecutions.length }}/{{ executions.length }} 条记录</span>
           </div>
           <ul class="execution-list">
             <li
-              v-for="r in executions"
+              v-for="r in visibleExecutions"
               :key="r.traceId"
               :class="{ selected: selectedTraceId === r.traceId }"
               @click="selectExecution(r)"
@@ -431,6 +462,7 @@
             </li>
           </ul>
           <p v-if="executions.length === 0" class="empty">暂无执行记录</p>
+          <p v-else-if="visibleExecutions.length === 0" class="empty">没有符合条件的执行记录（可清空筛选）。</p>
         </div>
 
         <div class="panel-right">
@@ -612,6 +644,8 @@ import {
 import { buildExecutionExport } from "./composables/exportRecord.js";
 import { buildScriptExport, parseScriptImport, dedupeImportName } from "./composables/scriptTransfer.js";
 import { buildVersionList, restoreVersion } from "./composables/versionHistory.js";
+import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
+import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 
 const API = "/api";
 
@@ -1462,6 +1496,39 @@ const loadVersion = (ver) => {
   alert("已载入历史版本。检查无误后点击「保存」完成回滚；如不想要这次回滚，历史里也保留了回滚前的版本。");
 };
 
+/* ---------- 版本对比（载入前先看"当前 ↔ 该版本"差异） ---------- */
+const diffVerIndex = ref(-1); // 当前展开 diff 的版本下标（historyVersions 的下标）
+
+/** 展开哪一版的 diff；再点一次收起 */
+const toggleDiff = (idx) => {
+  diffVerIndex.value = diffVerIndex.value === idx ? -1 : idx;
+};
+
+/** 对比基准 = 最近一次保存的脚本文本（不含编辑器里未保存的改动） */
+const savedContentOfCurrent = computed(() => {
+  const cur = scripts.value.find((s) => s.id === form.id);
+  return cur ? cur.content : "";
+});
+
+/** 当前展开版本的 diff 行 */
+const activeDiffRows = computed(() => {
+  const ver = historyVersions.value[diffVerIndex.value];
+  if (!ver) return [];
+  return diffLines(savedContentOfCurrent.value, ver.content);
+});
+
+const activeDiffSummary = computed(() => renderDiffRows(activeDiffRows.value));
+
+/* ---------- 脚本搜索 / 执行记录筛选 ---------- */
+const scriptKeyword = ref("");
+const visibleScripts = computed(() => filterScripts(scripts.value, scriptKeyword.value));
+
+const execKeyword = ref("");
+const execStatus = ref(""); // "" 全部 | "ok" 成功 | "fail" 失败
+const visibleExecutions = computed(() =>
+  filterExecutions(executions.value, { status: execStatus.value, keyword: execKeyword.value })
+);
+
 /** 导出当前编辑中的脚本为 JSON 文件（含画布 meta，对方导入后画布布局原样可用） */
 const exportCurrentScript = () => {
   if (!form.content) {
@@ -2217,6 +2284,33 @@ input:readonly { background: #f3f4f6; color: #6b7280; }
 
 /* ---------- 卡片画布 ---------- */
 .side-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.search-input {
+  padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+  min-width: 170px; outline: none;
+}
+.search-input:focus { border-color: #2563eb; }
+.search-input.narrow { min-width: 110px; }
+
+/* 版本对比 */
+.version-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.diff-block { display: block !important; flex-direction: column; padding: 8px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; }
+.diff-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #374151; margin-bottom: 6px; flex-wrap: wrap; gap: 6px; }
+.diff-add-n { color: #16a34a; font-weight: 600; margin-right: 6px; }
+.diff-remove-n { color: #dc2626; font-weight: 600; }
+.diff-legend { color: #9ca3af; }
+.diff-legend .lg { font-style: normal; font-weight: 600; padding: 0 2px; }
+.lg-add { color: #16a34a; }
+.lg-remove { color: #dc2626; }
+.diff-body {
+  max-height: 240px; overflow-y: auto; font-family: Consolas, "Courier New", monospace;
+  font-size: 12px; border: 1px solid #f3f4f6; border-radius: 4px;
+}
+.diff-row { padding: 1px 10px; white-space: pre-wrap; color: #374151; }
+.diff-row.add { background: #ecfdf5; color: #047857; }
+.diff-row.add::before { content: "＋ "; }
+.diff-row.remove { background: #fef2f2; color: #b91c1c; text-decoration: line-through; }
+.diff-row.remove::before { content: "－ "; }
+.diff-row.same { color: #6b7280; }
 .mode-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .version-panel {
   border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
