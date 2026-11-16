@@ -1,0 +1,43 @@
+name: Bug 报告
+description: 报告执行错误、日志不符合预期或页面异常
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 感谢反馈！提交前请先确认：本地 `./gradlew test` 与 `cd frontend && npm run test` 是否通过，问题是否在最新 main 分支上仍存在。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么？
+      description: 期望行为 vs 实际行为。日志/截图请贴在代码块里。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 xx 页面
+        2. 执行脚本 xx
+        3. 看到报错 xx
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题区域
+      options:
+        - 脚本执行 / 规则引擎
+        - 执行日志展示
+        - 卡片画布
+        - 脚本管理（增删改查/导入导出/版本历史）
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 运行方式与版本
+      placeholder: 例：单 jar v1.0.0（java -Dfile.encoding=UTF-8 -jar rule-log-1.0.0.jar）
+    validations:
+      required: true

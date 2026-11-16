@@ -1,5 +1,9 @@
 # QLExpress4 规则执行平台（附全链路可观测性）
 
+[![CI](https://github.com/miyavis/QlexpressScriptLog/actions/workflows/ci.yml/badge.svg)](https://github.com/miyavis/QlexpressScriptLog/actions/workflows/ci.yml)
+[![Release](https://github.com/miyavis/QlexpressScriptLog/actions/workflows/release.yml/badge.svg)](https://github.com/miyavis/QlexpressScriptLog/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 本项目演示如何在 QLExpress 4.1.3 规则执行过程中加入**可观测性**，面向业务人员：
 - 生产环境**事后查看**，不暂停程序、不需要断点/单步
 - 一条规则调用了哪些 Spring Service？Service 内部做了什么？日志全部可查
@@ -127,6 +131,12 @@ src/main/java/com/example/rulelog/
 - 同一个 Service 被 A 脚本、B 脚本先后调用时，各自产生独立 `traceId`，内部步骤精确归属，不会串号
 
 AOP 负责 Service 方法入口/出口，`StepLogger.log()` 负责方法内部业务步骤。手动埋点是因为 **Spring AOP 无法拦截同一个 Bean 内部的自调用**。
+
+---
+
+## 许可协议
+
+本项目基于 [MIT](LICENSE) 协议开源——可自由使用、修改、商用（含集成到公司内部系统），只需保留版权声明。
 
 ---
 
