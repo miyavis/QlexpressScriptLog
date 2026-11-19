@@ -25,6 +25,7 @@ export const buildScriptExport = (script) => {
   const payload = {
     name,
     content: s.content || "",
+    environment: s.environment && ["dev", "staging", "prod"].includes(s.environment) ? s.environment : "dev",
     ...(s.defaultParams && typeof s.defaultParams === "object" ? { defaultParams: s.defaultParams } : {}),
     ...(s.meta && typeof s.meta === "object" ? { meta: s.meta } : {})
   };
@@ -61,7 +62,8 @@ export const parseScriptImport = (text) => {
     content: raw.content,
     defaultParams: raw.defaultParams && typeof raw.defaultParams === "object" && !Array.isArray(raw.defaultParams)
       ? raw.defaultParams
-      : {}
+      : {},
+    environment: ["dev", "staging", "prod"].includes(raw.environment) ? raw.environment : "dev"
   };
   if (raw.meta && typeof raw.meta === "object" && !Array.isArray(raw.meta)) {
     req.meta = raw.meta;

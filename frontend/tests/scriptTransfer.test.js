@@ -47,6 +47,13 @@ describe("buildScriptExport（脚本 → 可分享 JSON）", () => {
 });
 
 describe("parseScriptImport（导入 JSON → 新建脚本请求体）", () => {
+  it("environment 随导出/导入往返保留", () => {
+    const exported = JSON.parse(buildScriptExport({ ...demoScript, environment: "prod" }).body);
+    expect(exported.script.environment).toBe("prod");
+    const req = parseScriptImport(JSON.stringify(exported));
+    expect(req.environment).toBe("prod");
+  });
+
   it("合法导出文件解析出 name/content/defaultParams/meta", () => {
     const exported = JSON.parse(buildScriptExport(demoScript).body);
     const req = parseScriptImport(JSON.stringify(exported));
