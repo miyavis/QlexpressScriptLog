@@ -86,6 +86,7 @@ public class RuleExecutionService {
 
         RuleExecutionRecord record = new RuleExecutionRecord();
         record.setTraceId(traceId);
+        record.setTraceparent(com.example.rulelog.trace.TraceParent.fromPlatformTraceId(traceId));
         record.setScriptId(script.getId());
         record.setScriptName(script.getName());
         record.setScriptSnapshot(script.getContent());

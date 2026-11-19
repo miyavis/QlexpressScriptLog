@@ -25,6 +25,7 @@ import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
+import { buildTopology } from "./composables/callTopology.js";
 
 const API = "/api";
 
@@ -44,6 +45,10 @@ const EDITOR_LINE_HEIGHT = 22;
 const view = ref("scripts"); // 'scripts' | 'executions'
 const isRunning = ref(false); // 执行中：防重复提交，按钮可据此禁用
 const isRerunning = ref(false); // 历史重跑中：防重复提交
+const callViewMode = ref("tree"); // 调用视图：'tree' 树形 | 'topo' 拓扑
+const topologyNodes = computed(() =>
+  selectedRecord.value ? buildTopology(selectedRecord.value.calls) : []
+);
 
 /* ---------- 脚本管理状态 ---------- */
 const scripts = ref([]);
@@ -55,6 +60,8 @@ const form = reactive({
   content: "",
   defaultParamsJson: "{}"
 });
+const versionMessage = ref(""); // 本次保存的版本备注（保存后清空）
+const currentScript = computed(() => scripts.value.find((s) => s.id === form.id) || null);
 
 /* ---------- 脚本右侧执行日志状态 ---------- */
 const scriptExecutions = ref([]);
@@ -633,7 +640,8 @@ const saveScript = async (keepOpen = false) => {
     id: form.id || null,
     name: form.name,
     content: form.content,
-    defaultParams
+    defaultParams,
+    versionMessage: versionMessage.value || null
   };
   // meta 是 content 的派生视图（单一事实源）：无论哪种模式都把卡片+映射+hash 一起保存。
   // 文本模式保存时反解析当前文本生成卡片，避免 meta 丢失后打开靠“猜”恢复。
@@ -672,6 +680,7 @@ const saveScript = async (keepOpen = false) => {
       }, fetch, getApiToken());
     }
     refreshSavedSnapshot();
+    versionMessage.value = "";
     await loadScripts();
     if (!keepOpen) {
       cancelEdit();
@@ -786,6 +795,21 @@ const historyVersions = computed(() => {
   const cur = scripts.value.find((s) => s.id === form.id);
   return cur ? buildVersionList(cur) : [];
 });
+
+/** 发布指定版本（标记为已发布），刷新脚本列表 */
+const publishVersion = async (ver) => {
+  const no = ver && ver.versionNo;
+  if (!no || !form.id) return;
+  if (!confirm(`将 v${no} 标记为已发布版本？`)) return;
+  try {
+    await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/publish?versionNo=${no}`,
+      { method: "POST" }, fetch, getApiToken());
+    await loadScripts();
+    alert(`v${no} 已发布。`);
+  } catch (e) {
+    alert("发布失败：" + e.message);
+  }
+};
 
 /** 载入历史版本到编辑器；载入后点"保存"即完成回滚（保存动作会先为当前版本留快照，回滚可撤销） */
 const loadVersion = (ver) => {
@@ -1129,6 +1153,9 @@ export {
   showHistory,
   historyVersions,
   loadVersion,
+  versionMessage,
+  currentScript,
+  publishVersion,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,
@@ -1144,6 +1171,8 @@ export {
   selectExecution,
   rerunRecord,
   isRerunning,
+  callViewMode,
+  topologyNodes,
   toggleLogDetail,
   toggleCall,
   registryFunctions,

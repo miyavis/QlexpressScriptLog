@@ -80,6 +80,9 @@
                     <div class="label">脚本 ID</div>
                   </div>
                 </div>
+                <div v-if="selectedRecord.traceparent" class="traceparent-line">
+                  W3C traceparent：<code>{{ selectedRecord.traceparent }}</code>
+                </div>
               </div>
 
               <!-- 执行参数快照 -->
@@ -102,8 +105,32 @@
 
             <!-- 服务调用与内部步骤 -->
             <div class="card full">
-              <div class="card-title">服务调用与内部步骤</div>
-              <div class="calls-tree">
+              <div class="card-title">
+                服务调用与内部步骤
+                <span class="detail-title-actions">
+                  <button class="btn-secondary sm" :class="{ tabon: callViewMode === 'tree' }" @click="callViewMode = 'tree'">树形</button>
+                  <button class="btn-secondary sm" :class="{ tabon: callViewMode === 'topo' }" @click="callViewMode = 'topo'">拓扑</button>
+                </span>
+              </div>
+              <div v-if="callViewMode === 'topo'" class="topology-view">
+                <div v-if="topologyNodes.length === 0" class="empty">无服务调用记录</div>
+                <div v-else class="topology-grid">
+                  <div
+                    v-for="node in topologyNodes"
+                    :key="node.key"
+                    class="topo-node"
+                    :class="{ dominant: node.dominant, failed: !node.success }"
+                    :style="{ marginLeft: (node.depth * 18) + 'px' }"
+                    :title="`耗时 ${node.durationMs}ms，占比 ${(node.share * 100).toFixed(0)}%`"
+                  >
+                    <span class="topo-label">{{ node.label }}</span>
+                    <span class="topo-share">{{ (node.share * 100).toFixed(0) }}%</span>
+                    <span class="topo-ms">{{ node.durationMs }}ms</span>
+                  </div>
+                </div>
+                <div class="topology-hint">节点按耗时占比着色：<span class="topo-legend dominant">主导(&ge;50%)</span> · <span class="topo-legend failed">失败</span></div>
+              </div>
+              <div v-else class="calls-tree">
                 <div v-if="selectedRecord.calls.length === 0" class="empty">无服务调用记录</div>
                 <div
                   v-for="call in selectedRecord.calls"
@@ -317,6 +344,8 @@ import {
   selectExecution,
   rerunRecord,
   isRerunning,
+  callViewMode,
+  topologyNodes,
   toggleLogDetail,
   toggleCall,
   registryFunctions,

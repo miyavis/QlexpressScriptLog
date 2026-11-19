@@ -88,12 +88,19 @@
                   <ul v-else class="version-list">
                     <li v-for="(ver, vi) in historyVersions" :key="vi">
                       <div class="version-info">
-                        <div class="version-name">{{ ver.name || "未命名" }} <span class="version-time">{{ formatTime(ver.savedAt) }}</span></div>
+                        <div class="version-name">
+                          <span class="version-no">v{{ ver.versionNo || vi + 1 }}</span>
+                          {{ ver.name || "未命名" }}
+                          <span v-if="currentScript && currentScript.publishedVersion === (ver.versionNo || vi + 1)" class="version-published">已发布</span>
+                          <span class="version-time">{{ formatTime(ver.savedAt) }}</span>
+                        </div>
+                        <div v-if="ver.message" class="version-message">备注：{{ ver.message }}</div>
                         <div class="version-preview">{{ (ver.content || "").split("\n")[0] }}</div>
                       </div>
                       <div class="version-actions">
                         <button class="btn-secondary sm" @click="toggleDiff(vi)">{{ diffVerIndex === vi ? "收起对比" : "对比" }}</button>
                         <button class="btn-secondary sm" @click="loadVersion(ver)">载入此版本</button>
+                        <button class="btn-secondary sm" @click="publishVersion(ver)">发布</button>
                       </div>
                     </li>
                     <li v-if="diffVerIndex >= 0" class="diff-block" @dblclick.stop>
@@ -417,6 +424,11 @@
               </div>
             </div>
 
+            <div class="version-note-row">
+              <label>本次修改备注</label>
+              <input v-model="versionMessage" class="card-input" placeholder="可选：说明这次改了什么，便于日后回滚" />
+            </div>
+
             <div class="form-actions">
               <button class="btn-primary" @click="saveScript">保存</button>
               <button class="btn-success" :disabled="isRunning" @click="runScript">{{ isRunning ? "执行中…" : "执行脚本" }}</button>
@@ -534,6 +546,9 @@ import {
   showHistory,
   historyVersions,
   loadVersion,
+  versionMessage,
+  currentScript,
+  publishVersion,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,

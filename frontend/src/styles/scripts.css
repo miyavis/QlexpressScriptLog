@@ -347,6 +347,12 @@
 .version-list li:last-child { border-bottom: none; }
 .version-info { min-width: 0; }
 .version-name { font-size: 13px; color: var(--ink-900); font-weight: 500; }
+.version-no { font-family: var(--font-mono); color: var(--accent); font-weight: 700; margin-right: 4px; }
+.version-published { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--ok-soft); color: var(--ok-ink); font-weight: 650; margin-left: 6px; }
+.version-message { font-size: 11px; color: var(--ink-500); margin-top: 2px; }
+.version-note-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.version-note-row label { font-size: 12.5px; color: var(--ink-700); font-weight: 600; flex: none; }
+.version-note-row .card-input { flex: 1; }
 .version-time { font-size: 11px; color: var(--ink-400); font-weight: 400; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .version-preview {
   font-size: 11.5px; color: var(--ink-500); white-space: nowrap; overflow: hidden;

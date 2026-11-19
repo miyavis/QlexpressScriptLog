@@ -14,6 +14,17 @@ public class ScriptRequest {
     /** 附加元数据（卡片画布 sourceMap 等），平台只存储不解析 */
     private Map<String, Object> meta;
 
+    /** 本次修改的备注（记录到版本快照，说明"为什么改"） */
+    private String versionMessage;
+
+    public String getVersionMessage() {
+        return versionMessage;
+    }
+
+    public void setVersionMessage(String versionMessage) {
+        this.versionMessage = versionMessage;
+    }
+
     public Map<String, Object> getMeta() {
         return meta;
     }

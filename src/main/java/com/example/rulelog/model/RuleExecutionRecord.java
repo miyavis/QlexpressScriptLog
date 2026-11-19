@@ -15,6 +15,9 @@ public class RuleExecutionRecord {
 
     private String traceId;
 
+    /** W3C traceparent（由 traceId 映射，便于对接 OTel 生态） */
+    private String traceparent;
+
     private String scriptId;
 
     private String scriptName;
@@ -55,6 +58,14 @@ public class RuleExecutionRecord {
 
     public void setTraceId(String traceId) {
         this.traceId = traceId;
+    }
+
+    public String getTraceparent() {
+        return traceparent;
+    }
+
+    public void setTraceparent(String traceparent) {
+        this.traceparent = traceparent;
     }
 
     public String getScriptId() {

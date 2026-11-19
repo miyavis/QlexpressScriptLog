@@ -27,6 +27,18 @@ class ScriptVersionServiceTest {
     }
 
     @Test
+    void 版本号递增且快照带元信息() {
+        List<ScriptVersion> versions = new ArrayList<>();
+        versions = ScriptVersionService.record(versions, script("v1", "返回 1;"));
+        versions = ScriptVersionService.record(versions, script("v2", "返回 2;"));
+        // 新快照在最前，版本号依次递增
+        assertEquals(2, versions.get(0).getVersionNo());
+        assertEquals(1, versions.get(1).getVersionNo());
+        assertEquals("user", versions.get(0).getAuthor());
+        assertNotNull(versions.get(0).getSavedAt());
+    }
+
+    @Test
     void 快照记录脚本的名称内容与默认参数() {
         Script s = script("打折规则", "返回 1");
         Map<String, Object> params = new java.util.LinkedHashMap<>();

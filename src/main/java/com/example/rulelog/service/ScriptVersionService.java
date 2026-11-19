@@ -22,7 +22,7 @@ public final class ScriptVersionService {
     private ScriptVersionService() {
     }
 
-    /** 对脚本当前内容拍快照 */
+    /** 对脚本当前内容拍快照（versionNo 由调用方设置） */
     public static ScriptVersion snapshot(Script script) {
         ScriptVersion v = new ScriptVersion();
         v.setSavedAt(System.currentTimeMillis());
@@ -30,11 +30,12 @@ public final class ScriptVersionService {
         v.setContent(script.getContent());
         v.setDefaultParams(script.getDefaultParams());
         v.setMeta(script.getMeta());
+        v.setAuthor("user");
         return v;
     }
 
     /**
-     * 记录一次修改前的快照：新版本插到最前，超出上限丢弃最旧的。
+     * 记录一次修改前的快照：新版本插到最前，版本号在当前最大版本基础上 +1，超出上限丢弃最旧的。
      *
      * @param existing 已有版本列表（可为 null，视为空）
      * @param current  本次修改前的脚本（null 时原样返回，防御性）
@@ -44,7 +45,15 @@ public final class ScriptVersionService {
         if (current == null) {
             return out;
         }
-        out.add(0, snapshot(current));
+        int nextNo = 1;
+        for (ScriptVersion v : out) {
+            if (v != null && v.getVersionNo() >= nextNo) {
+                nextNo = v.getVersionNo() + 1;
+            }
+        }
+        ScriptVersion snap = snapshot(current);
+        snap.setVersionNo(nextNo);
+        out.add(0, snap);
         if (out.size() > MAX_KEEP) {
             out = new ArrayList<>(out.subList(0, MAX_KEEP));
         }

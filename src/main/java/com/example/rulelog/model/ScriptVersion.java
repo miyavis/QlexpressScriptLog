@@ -12,6 +12,15 @@ public class ScriptVersion {
     /** 快照时间（毫秒时间戳） */
     private long savedAt;
 
+    /** 递增版本号（每次修改前 +1） */
+    private int versionNo;
+
+    /** 保存备注（可选，业务人员填写"为什么改"） */
+    private String message;
+
+    /** 保存人（默认 "user"，预留接入鉴权后替换） */
+    private String author;
+
     private String name;
 
     private String content;
@@ -26,6 +35,30 @@ public class ScriptVersion {
 
     public void setSavedAt(long savedAt) {
         this.savedAt = savedAt;
+    }
+
+    public int getVersionNo() {
+        return versionNo;
+    }
+
+    public void setVersionNo(int versionNo) {
+        this.versionNo = versionNo;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(String author) {
+        this.author = author;
     }
 
     public String getName() {

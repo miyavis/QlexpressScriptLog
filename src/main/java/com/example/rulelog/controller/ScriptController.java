@@ -3,6 +3,7 @@ package com.example.rulelog.controller;
 import com.example.rulelog.exception.NotFoundException;
 import com.example.rulelog.model.Script;
 import com.example.rulelog.model.ScriptRequest;
+import com.example.rulelog.model.ScriptVersion;
 import com.example.rulelog.service.ScriptVersionService;
 import com.example.rulelog.store.ScriptStore;
 import com.example.rulelog.util.RequestValidator;
@@ -67,7 +68,11 @@ public class ScriptController {
             throw new NotFoundException("脚本不存在: " + id);
         }
         // 版本历史：先记录"改之前"的完整快照（含画布 meta），新快照在最前，最多保留 10 个
-        existing.setVersions(ScriptVersionService.record(existing.getVersions(), existing));
+        List<ScriptVersion> versions = ScriptVersionService.record(existing.getVersions(), existing);
+        if (versions != null && !versions.isEmpty() && request.getVersionMessage() != null) {
+            versions.get(0).setMessage(request.getVersionMessage());
+        }
+        existing.setVersions(versions);
         applyRequest(existing, request);
         existing.setUpdatedAt(System.currentTimeMillis());
         scriptStore.put(existing);
@@ -82,6 +87,22 @@ public class ScriptController {
             throw new NotFoundException("脚本不存在: " + id);
         }
         return Collections.singletonMap("ok", true);
+    }
+
+    /** 将某个历史版本标记为"已发布"（versionNo 不存在时报错） */
+    @PostMapping("/{id}/publish")
+    public Script publish(@PathVariable String id, @RequestParam int versionNo) {
+        Script script = scriptStore.get(id);
+        if (script == null) {
+            throw new NotFoundException("脚本不存在: " + id);
+        }
+        boolean exists = script.getVersions().stream().anyMatch(v -> v.getVersionNo() == versionNo);
+        if (!exists) {
+            throw new com.example.rulelog.exception.BadRequestException("版本 " + versionNo + " 不存在");
+        }
+        script.setPublishedVersion(versionNo);
+        scriptStore.put(script);
+        return script;
     }
 
     private void validate(ScriptRequest request) {

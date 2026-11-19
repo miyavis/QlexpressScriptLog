@@ -31,6 +31,9 @@ public class Script {
     /** 历史版本（新→旧，最多 10 条）：每次修改前自动快照，回滚用 */
     private List<ScriptVersion> versions = new ArrayList<>();
 
+    /** 已发布的版本号（对应 ScriptVersion.versionNo，-1 表示未发布） */
+    private int publishedVersion = -1;
+
     public String getId() {
         return id;
     }
@@ -93,5 +96,13 @@ public class Script {
 
     public void setVersions(List<ScriptVersion> versions) {
         this.versions = versions == null ? new ArrayList<>() : versions;
+    }
+
+    public int getPublishedVersion() {
+        return publishedVersion;
+    }
+
+    public void setPublishedVersion(int publishedVersion) {
+        this.publishedVersion = publishedVersion;
     }
 }
