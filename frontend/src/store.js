@@ -25,6 +25,7 @@ import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
 import { trimToasts } from "./composables/toast.js";
 import { makeHistory, pushHistory, popUndo, popRedo, canUndo, canRedo } from "./composables/historyStack.js";
+import { newTestCase, parseCaseParams, summarizeResults } from "./composables/testCases.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary, buildCondText, findCondVerdict } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
@@ -79,6 +80,12 @@ const form = reactive({
 });
 const versionMessage = ref(""); // 本次保存的版本备注（保存后清空）
 const currentScript = computed(() => scripts.value.find((s) => s.id === form.id) || null);
+
+/* ---------- 场景测试（批量用例） ---------- */
+const testCases = ref([]);          // [{id, name, paramsJson}]，随脚本 meta.cases 保存
+const caseResults = ref([]);        // 最近一次批量执行结果
+const caseSummary = computed(() => summarizeResults(caseResults.value));
+const isTestingCases = ref(false);
 
 /* ---------- 脚本右侧执行日志状态 ---------- */
 const scriptExecutions = ref([]);
@@ -568,6 +575,9 @@ const selectScript = (s) => {
   form.content = s.content || "";
   form.defaultParamsJson = compactJson(s.defaultParams);
   form.environment = s.environment || "dev";
+  testCases.value = s.meta && Array.isArray(s.meta.cases)
+    ? JSON.parse(JSON.stringify(s.meta.cases)) : [];
+  caseResults.value = [];
   // 默认展示卡片画布：meta.cards 未过期（contentHash 匹配）时用保存的卡片；
   // 过期（外部手改过内容）或缺失时，以脚本文本为真相重新反解析，避免旧卡片静默覆盖手改内容
   const metaCards = s.meta && Array.isArray(s.meta.cards) ? s.meta.cards : null;
@@ -597,6 +607,8 @@ const newScript = () => {
   form.environment = "dev";
   versionMessage.value = "";
   timelineIndex.value = -1;
+  testCases.value = [];
+  caseResults.value = [];
   canvasCards.value = [];
   canvasHistory.value = makeHistory(30);
   canvasMode.value = true;
@@ -621,9 +633,11 @@ const cancelEdit = () => {
   form.environment = "dev";
   versionMessage.value = "";
   timelineIndex.value = -1;
+  testCases.value = [];
+  caseResults.value = [];
 };
 
-/** 保存快照：检测“有未保存的修改”（执行前提醒，避免执行记录与脚本版本错位） */
+/** 保存快照：检测"有未保存的修改"（执行前提醒，避免执行记录与脚本版本错位） */
 const savedSnapshot = ref({ name: "", content: "", paramsJson: "", environment: "dev" });
 const refreshSavedSnapshot = () => {
   savedSnapshot.value = {
@@ -665,7 +679,8 @@ const saveScript = async (keepOpen = false) => {
   payload.meta = {
     cards: cardsForMeta,
     cardSourceMap: genScriptFromCards(cardsForMeta).sourceMap,
-    contentHash: hashContent(form.content)
+    contentHash: hashContent(form.content),
+    cases: JSON.parse(JSON.stringify(testCases.value))
   };
 
   // 保存前静态校验：语法错误与未定义变量前移，不让有问题的脚本入库
@@ -1019,6 +1034,45 @@ const selectExecution = (r) => {
 };
 
 /** 用历史记录的参数快照重新执行（生成新记录），完成后刷新列表并选中新记录 */
+/* ---------- 场景测试（批量用例） ---------- */
+const addTestCase = () => { testCases.value.push(newTestCase()); };
+const removeTestCase = (idx) => { testCases.value.splice(idx, 1); };
+
+/** 批量执行所有用例：每条用用例参数跑一次当前脚本，汇总通过率 */
+const runTestCases = async () => {
+  if (isTestingCases.value) return;
+  if (!form.id) { notify("请先保存脚本再跑场景测试", "warning"); return; }
+  const cases = testCases.value.filter((c) => c && parseCaseParams(c.paramsJson) !== null);
+  if (cases.length === 0) { notify("请至少配置一条参数合法（JSON 对象）的用例", "warning"); return; }
+  isTestingCases.value = true;
+  caseResults.value = [];
+  try {
+    for (const c of cases) {
+      const params = parseCaseParams(c.paramsJson);
+      const start = Date.now();
+      try {
+        const record = await requestJson(
+          `${API}/executions/run?scriptId=${encodeURIComponent(form.id)}`,
+          { method: "POST", body: JSON.stringify(params) }, fetch, getApiToken());
+        caseResults.value.push({
+          id: c.id, name: c.name, ok: !!record.success,
+          result: record.result, error: record.errorMessage || null,
+          durationMs: record.durationMs != null ? record.durationMs : (Date.now() - start)
+        });
+      } catch (e) {
+        caseResults.value.push({
+          id: c.id, name: c.name, ok: false, result: null,
+          error: e.message, durationMs: Date.now() - start
+        });
+      }
+    }
+    await loadScriptExecutions(form.id);
+    notify(`场景测试完成：${caseSummary.value.passed}/${caseSummary.value.total} 通过`, "success");
+  } finally {
+    isTestingCases.value = false;
+  }
+};
+
 const rerunRecord = async (record) => {
   if (isRerunning.value || !record) return;
   isRerunning.value = true;
@@ -1285,6 +1339,13 @@ export {
   canRedoCards,
   undoCards,
   redoCards,
-  recordHistory
+  recordHistory,
+  testCases,
+  caseResults,
+  caseSummary,
+  isTestingCases,
+  addTestCase,
+  removeTestCase,
+  runTestCases
 };
 

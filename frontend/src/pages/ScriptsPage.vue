@@ -514,6 +514,35 @@
               <input v-model="versionMessage" class="card-input" placeholder="可选：说明这次改了什么，便于日后回滚" />
             </div>
 
+            <!-- 场景测试：批量用例 -->
+            <div class="case-panel">
+              <div class="case-head">
+                <span>🧪 场景测试 <span class="hint">（配多组参数，一键跑，看通过率）</span></span>
+                <span class="case-head-actions">
+                  <button class="btn-secondary sm" @click="addTestCase">+ 加用例</button>
+                  <button class="btn-primary sm" :disabled="isTestingCases || testCases.length === 0" @click="runTestCases">
+                    {{ isTestingCases ? '执行中…' : '▶ 跑全部用例' }}
+                  </button>
+                </span>
+              </div>
+              <template v-if="testCases.length">
+                <div v-for="(c, ci) in testCases" :key="c.id" class="case-row">
+                  <input v-model="c.name" class="card-input case-name" placeholder="用例名" />
+                  <input v-model="c.paramsJson" class="card-input case-params" placeholder='{"user":"张三"}' />
+                  <button class="card-btn danger" @click="removeTestCase(ci)" title="删除用例">✕</button>
+                  <span v-if="caseResults[ci]" class="case-result" :class="caseResults[ci].ok ? 'ok' : 'fail'">
+                    {{ caseResults[ci].ok ? '✓ ' + fmtScalar(caseResults[ci].result) : '✗ ' + caseResults[ci].error }}
+                    <span class="case-ms">{{ caseResults[ci].durationMs }}ms</span>
+                  </span>
+                </div>
+                <div v-if="caseResults.length" class="case-summary">
+                  通过 <b :class="caseSummary.failed ? 'fail' : 'ok'">{{ caseSummary.passed }}/{{ caseSummary.total }}</b>
+                  （{{ (caseSummary.passRate * 100).toFixed(0) }}%）
+                </div>
+              </template>
+              <p v-else class="case-empty">暂无用例。点「+ 加用例」配置参数，保存脚本后可批量执行。</p>
+            </div>
+
             <div class="form-actions">
               <button class="btn-primary" @click="saveScript">保存</button>
               <button class="btn-success" :disabled="isRunning" @click="runScript">{{ isRunning ? "执行中…" : "执行脚本" }}</button>
@@ -671,7 +700,14 @@ import {
   canRedoCards,
   undoCards,
   redoCards,
-  recordHistory
+  recordHistory,
+  testCases,
+  caseResults,
+  caseSummary,
+  isTestingCases,
+  addTestCase,
+  removeTestCase,
+  runTestCases
 } from "../store.js";
 
 // 字段编辑撤销：字段获得焦点时记录快照；同一张卡片连续聚焦不重复记录
