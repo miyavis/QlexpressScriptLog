@@ -796,6 +796,36 @@ const historyVersions = computed(() => {
   return cur ? buildVersionList(cur) : [];
 });
 
+/** 评审状态流转：submit / approve / reject */
+const reviewAction = async (action) => {
+  if (!form.id) return;
+  const labels = { submit: "提交评审", approve: "通过评审并发布", reject: "驳回评审" };
+  if (!confirm(`确定「${labels[action] || action}」吗？`)) return;
+  try {
+    await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/review?action=${action}`,
+      { method: "POST" }, fetch, getApiToken());
+    await loadScripts();
+    alert(`已${labels[action] || action}。`);
+  } catch (e) {
+    alert("评审操作失败：" + e.message);
+  }
+};
+
+/** 切换/新建分支 */
+const switchBranch = async () => {
+  if (!form.id) return;
+  const name = prompt("输入分支名（新名字即创建新分支）：", (currentScript.value && currentScript.value.branch) || "main");
+  if (!name || !name.trim()) return;
+  try {
+    await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/branch?name=${encodeURIComponent(name.trim())}`,
+      { method: "POST" }, fetch, getApiToken());
+    await loadScripts();
+    alert(`已切换到分支「${name.trim()}」。`);
+  } catch (e) {
+    alert("切换分支失败：" + e.message);
+  }
+};
+
 /** 发布指定版本（标记为已发布），刷新脚本列表 */
 const publishVersion = async (ver) => {
   const no = ver && ver.versionNo;
@@ -1156,6 +1186,8 @@ export {
   versionMessage,
   currentScript,
   publishVersion,
+  reviewAction,
+  switchBranch,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,

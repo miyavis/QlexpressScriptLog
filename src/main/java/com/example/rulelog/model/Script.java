@@ -34,6 +34,12 @@ public class Script {
     /** 已发布的版本号（对应 ScriptVersion.versionNo，-1 表示未发布） */
     private int publishedVersion = -1;
 
+    /** 所属分支（默认 main，支持创建/切换分支） */
+    private String branch = "main";
+
+    /** 评审状态：draft / review / published */
+    private String reviewStatus = "draft";
+
     public String getId() {
         return id;
     }
@@ -104,5 +110,22 @@ public class Script {
 
     public void setPublishedVersion(int publishedVersion) {
         this.publishedVersion = publishedVersion;
+    }
+
+    public String getBranch() {
+        return branch;
+    }
+
+    public void setBranch(String branch) {
+        this.branch = branch == null || branch.trim().isEmpty() ? "main" : branch.trim();
+    }
+
+    public String getReviewStatus() {
+        return reviewStatus;
+    }
+
+    public void setReviewStatus(String reviewStatus) {
+        this.reviewStatus = reviewStatus == null || reviewStatus.trim().isEmpty()
+                ? "draft" : reviewStatus.trim();
     }
 }

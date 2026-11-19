@@ -424,6 +424,21 @@
               </div>
             </div>
 
+            <div v-if="currentScript" class="review-bar">
+              <span class="review-branch">分支：<b>{{ currentScript.branch || 'main' }}</b></span>
+              <span class="review-status" :class="currentScript.reviewStatus || 'draft'">
+                {{ { draft: '草稿', review: '评审中', published: '已发布' }[currentScript.reviewStatus] || '草稿' }}
+              </span>
+              <span class="review-actions">
+                <button class="btn-secondary sm" @click="switchBranch">切换分支</button>
+                <button v-if="!currentScript.reviewStatus || currentScript.reviewStatus === 'draft'" class="btn-secondary sm" @click="reviewAction('submit')">提交评审</button>
+                <template v-if="currentScript.reviewStatus === 'review'">
+                  <button class="btn-success sm" @click="reviewAction('approve')">通过并发布</button>
+                  <button class="btn-secondary sm" @click="reviewAction('reject')">驳回</button>
+                </template>
+              </span>
+            </div>
+
             <div class="version-note-row">
               <label>本次修改备注</label>
               <input v-model="versionMessage" class="card-input" placeholder="可选：说明这次改了什么，便于日后回滚" />
@@ -549,6 +564,8 @@ import {
   versionMessage,
   currentScript,
   publishVersion,
+  reviewAction,
+  switchBranch,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,
