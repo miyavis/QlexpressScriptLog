@@ -49,6 +49,8 @@ const EDITOR_LINE_HEIGHT = 22;
 const view = ref("scripts"); // 'scripts' | 'executions'
 const isRunning = ref(false); // 执行中：防重复提交，按钮可据此禁用
 const isRerunning = ref(false); // 历史重跑中：防重复提交
+const isLoadingScripts = ref(false); // 脚本列表加载中
+const isLoadingExecutions = ref(false); // 执行记录加载中
 
 /* ---------- Toast 通知（替代阻塞式 alert） ---------- */
 const toasts = ref([]);
@@ -573,10 +575,13 @@ const onLogLineClick = (lineNo) => {
 
 /* ---------- 脚本管理 API ---------- */
 const loadScripts = async () => {
+  isLoadingScripts.value = true;
   try {
     scripts.value = await requestJson(`${API}/scripts`, {}, fetch, getApiToken());
   } catch (e) {
     notify("加载脚本列表失败：" + e.message, "error");
+  } finally {
+    isLoadingScripts.value = false;
   }
 };
 
@@ -787,11 +792,14 @@ const runScript = async () => {
 
 /* ---------- 执行记录 API ---------- */
 const loadExecutions = async () => {
+  isLoadingExecutions.value = true;
   try {
     // 后端上限 200（与 max-execution-records 一致），一次拉全，避免固定 100 漏掉更早记录
     executions.value = await requestJson(`${API}/executions?limit=200`, {}, fetch, getApiToken());
   } catch (e) {
     notify("加载执行记录失败：" + e.message, "error");
+  } finally {
+    isLoadingExecutions.value = false;
   }
 };
 
@@ -1354,6 +1362,8 @@ export {
   toasts,
   notify,
   dismissToast,
+  isLoadingScripts,
+  isLoadingExecutions,
   canUndoCards,
   canRedoCards,
   undoCards,

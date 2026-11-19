@@ -47,7 +47,8 @@
               <div v-if="!r.success" class="exec-item-error">{{ r.errorMessage }}</div>
             </li>
           </ul>
-          <p v-if="executions.length === 0" class="empty">暂无执行记录</p>
+          <p v-if="isLoadingExecutions" class="empty loading-state">⏳ 正在加载执行记录…</p>
+          <p v-else-if="executions.length === 0" class="empty">暂无执行记录</p>
           <p v-else-if="visibleExecutions.length === 0" class="empty">没有符合条件的执行记录（可清空筛选）。</p>
         </div>
 
@@ -351,6 +352,7 @@ import {
   deleteScript,
   runScript,
   loadExecutions,
+  isLoadingExecutions,
   loadScriptExecutions,
   downloadExecution,
   showHistory,

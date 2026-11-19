@@ -65,7 +65,8 @@
               </tbody>
             </table>
           </div>
-          <p v-if="scripts.length === 0" class="empty">暂无脚本，点击右上角「+ 新建脚本」创建。</p>
+          <p v-if="isLoadingScripts" class="empty loading-state">⏳ 正在加载脚本…</p>
+          <p v-else-if="scripts.length === 0" class="empty">暂无脚本，点击右上角「+ 新建脚本」创建。</p>
           <p v-else-if="visibleScripts.length === 0" class="empty">没有匹配「{{ scriptKeyword }}」的脚本。</p>
         </div>
 
@@ -651,6 +652,7 @@ import {
   cardChip,
   onLogLineClick,
   loadScripts,
+  isLoadingScripts,
   selectScript,
   newScript,
   cancelEdit,
