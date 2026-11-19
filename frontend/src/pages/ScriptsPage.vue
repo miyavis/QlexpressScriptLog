@@ -90,6 +90,11 @@
                 <div class="side-toolbar">
                   <button class="mode-btn" :class="{ tabon: !canvasMode }" @click="canvasMode = false">文本编辑</button>
                   <button class="mode-btn" :class="{ tabon: canvasMode }" @click="enterCanvas()">🎴 卡片画布</button>
+                  <template v-if="canvasMode">
+                    <span class="toolbar-sep"></span>
+                    <button class="mode-btn" :disabled="!canUndoCards" @click="undoCards" title="撤销 (Ctrl+Z)">↶ 撤销</button>
+                    <button class="mode-btn" :disabled="!canRedoCards" @click="redoCards" title="重做 (Ctrl+Y)">↷ 重做</button>
+                  </template>
                   <button
                     class="mode-btn"
                     :class="{ tabon: showHistory }"
@@ -192,7 +197,7 @@
                       <div class="palette-tip">拖入画布或点击添加；画布内可拖动卡片调顺序</div>
                       <div class="palette-tip">服务函数 {{ registryFunctions.length }} 个（来自后端注册表，新增 Service 注册一次即自动出现）</div>
                     </div>
-                    <div class="canvas" @dragover.prevent>
+                    <div class="canvas" @dragover.prevent @focusin="onCardFocusIn">
                       <datalist id="known-vars">
                         <option v-for="v in knownVariables" :key="v" :value="v"></option>
                       </datalist>
@@ -523,6 +528,7 @@
 </template>
 
 <script setup>
+import { onMounted, onUnmounted } from "vue";
 // 状态与动作全部来自 ../store.js（模块级单例，切页不丢状态）
 import {
   API,
@@ -660,6 +666,35 @@ import {
   knownVariables,
   duplicateCard,
   focusCardFirstInput,
-  goView
+  goView,
+  canUndoCards,
+  canRedoCards,
+  undoCards,
+  redoCards,
+  recordHistory
 } from "../store.js";
+
+// 字段编辑撤销：字段获得焦点时记录快照；同一张卡片连续聚焦不重复记录
+let lastFocusedCardId = null;
+const onCardFocusIn = (e) => {
+  const cardEl = e.target && e.target.closest && e.target.closest("[data-card-id]");
+  if (!cardEl) return;
+  const cardId = cardEl.getAttribute("data-card-id");
+  if (cardId === lastFocusedCardId) return;
+  lastFocusedCardId = cardId;
+  recordHistory();
+};
+
+// 画布编辑快捷键：Ctrl+Z 撤销 / Ctrl+Y 或 Ctrl+Shift+Z 重做（仅在输入框外触发，避免干扰打字）
+const onKeydown = (e) => {
+  if (!canvasMode.value) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const tag = e.target && e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (e.key === "z" && !e.shiftKey) { e.preventDefault(); undoCards(); }
+  else if (e.key === "y" || (e.key === "z" && e.shiftKey)) { e.preventDefault(); redoCards(); }
+};
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 </script>

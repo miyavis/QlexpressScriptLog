@@ -24,6 +24,7 @@ import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
 import { trimToasts } from "./composables/toast.js";
+import { makeHistory, pushHistory, popUndo, popRedo, canUndo, canRedo } from "./composables/historyStack.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary, buildCondText, findCondVerdict } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
@@ -300,6 +301,24 @@ const onEditorMouseMove = (e) => {
 /* ---------- 卡片画布 ---------- */
 const canvasMode = ref(false);
 const canvasCards = ref([]);
+// 撤销/重做：对结构变更（增删移动复制）做快照；字段编辑的回滚走"历史版本"机制
+const canvasHistory = ref(makeHistory(30));
+const snapshotCards = () => JSON.parse(JSON.stringify(canvasCards.value));
+const recordHistory = () => { canvasHistory.value = pushHistory(canvasHistory.value, snapshotCards()); };
+const canUndoCards = computed(() => canUndo(canvasHistory.value));
+const canRedoCards = computed(() => canRedo(canvasHistory.value));
+const undoCards = () => {
+  const { snapshot, state } = popUndo(canvasHistory.value, snapshotCards());
+  if (!snapshot) return;
+  canvasHistory.value = state;
+  canvasCards.value = snapshot;
+};
+const redoCards = () => {
+  const { snapshot, state } = popRedo(canvasHistory.value, snapshotCards());
+  if (!snapshot) return;
+  canvasHistory.value = state;
+  canvasCards.value = snapshot;
+};
 const dragPayload = ref(null);
 const hoverCardId = ref(null);
 const logHoverCardId = ref(null);
@@ -354,17 +373,20 @@ const addCard = (type) => {
   if (card.type === "prepcall" && !card.prepExpr) {
     card.prepExpr = candidate;
   }
+  recordHistory();
   canvasCards.value.push(card);
   focusCardFirstInput(card.id);
 };
 
 const removeCard = (idx) => {
+  recordHistory();
   canvasCards.value.splice(idx, 1);
 };
 
 const moveCard = (idx, dir) => {
   const target = idx + dir;
   if (target < 0 || target >= canvasCards.value.length) return;
+  recordHistory();
   const cards = canvasCards.value;
   const tmp = cards[idx];
   cards[idx] = cards[target];
@@ -386,6 +408,7 @@ const onCardDrop = (e, idx) => {
   const p = dragPayload.value;
   dragPayload.value = null;
   if (!p) return;
+  recordHistory();
   if (p.kind === "new") {
     const card = newCard(p.type);
     if ((card.type === "call" || card.type === "prepcall") && !card.varName) {
@@ -575,6 +598,7 @@ const newScript = () => {
   versionMessage.value = "";
   timelineIndex.value = -1;
   canvasCards.value = [];
+  canvasHistory.value = makeHistory(30);
   canvasMode.value = true;
   lastCanvasScript.value = "";
   refreshSavedSnapshot();
@@ -589,6 +613,7 @@ const cancelEdit = () => {
   expandedCallKeys.value = new Set();
   canvasMode.value = false;
   canvasCards.value = [];
+  canvasHistory.value = makeHistory(30);
   hoverCardId.value = null;
   logHoverCardId.value = null;
   selectedCardId.value = null;
@@ -1097,6 +1122,7 @@ const duplicateCard = (idx) => {
   const src = canvasCards.value[idx];
   if (!src) return;
   const copy = { ...JSON.parse(JSON.stringify(src)), id: newCard("text").id };
+  recordHistory();
   canvasCards.value.splice(idx + 1, 0, copy);
 };
 
@@ -1254,6 +1280,11 @@ export {
   goView,
   toasts,
   notify,
-  dismissToast
+  dismissToast,
+  canUndoCards,
+  canRedoCards,
+  undoCards,
+  redoCards,
+  recordHistory
 };
 
