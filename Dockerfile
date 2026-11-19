@@ -15,7 +15,7 @@ RUN chmod +x ./gradlew \
     && ./gradlew bootJar --no-daemon \
     && find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' -exec cp {} /workspace/app.jar \;
 
-# Keep the runtime image small; Java 17 runs this Java 8-targeted application.
+# Keep the runtime image small; Java 17 runs this Java 17-targeted application.
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=backend /workspace/app.jar ./app.jar

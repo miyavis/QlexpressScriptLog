@@ -60,29 +60,31 @@ public class ScriptStore {
         return applicationHome().resolve(configured).normalize();
     }
 
-    /** 应用所在目录：开发时=项目根，打包 jar 时=jar 所在目录；解析失败退回到当前工作目录 */
+    /** 应用所在目录：开发时=项目根，打包 jar 时=jar 所在目录；解析失败退回到当前工作目录。
+     *  用 Spring Boot 的 ApplicationHome 定位——它正确处理可执行 jar（含 Boot3 的嵌套 jar/nested URI），
+     *  直接用 getProtectionDomain().getCodeSource() 在 Boot3 的 jar 里会返回 zipfs URI 导致 ProviderMismatchException。 */
     private Path applicationHome() {
         try {
-            Path codeLocation = Paths.get(
-                    ScriptStore.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            if (Files.isDirectory(codeLocation)) {
-                // 开发环境（IDE / mvn spring-boot:run）：…/target/classes → 回退到项目根
-                Path dir = codeLocation;
-                String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
-                if (name.equals("classes") || name.endsWith(".classes")) {
-                    Path target = dir.getParent(); // …/target
-                    if (target != null && target.getFileName() != null
-                            && target.getFileName().toString().equals("target")) {
-                        Path projectRoot = target.getParent();
-                        if (projectRoot != null) {
-                            return projectRoot;
-                        }
-                    }
-                }
-                return dir;
+            org.springframework.boot.system.ApplicationHome home =
+                    new org.springframework.boot.system.ApplicationHome(ScriptStore.class);
+            Path dir = home.getDir() == null ? null : home.getDir().toPath();
+            if (dir == null) {
+                return Paths.get("").toAbsolutePath();
             }
-            // 打包为 jar：文件所在目录
-            return codeLocation.getParent() != null ? codeLocation.getParent() : Paths.get("").toAbsolutePath();
+            String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
+            // 开发环境（IDE / bootRun）：…/build/classes/java/main（或 target/classes）→ 回退到项目根
+            if (name.equals("classes") || name.endsWith(".classes")) {
+                Path parent = dir.getParent();
+                if (parent != null && parent.getFileName() != null
+                        && (parent.getFileName().toString().equals("target")
+                            || parent.getFileName().toString().equals("java"))) {
+                    Path root = parent.getFileName().toString().equals("java")
+                            ? parent.getParent().getParent().getParent() // build/classes/java/main → 项目根
+                            : parent.getParent();                          // target/classes → 项目根
+                    if (root != null) return root;
+                }
+            }
+            return dir;
         } catch (Exception e) {
             return Paths.get("").toAbsolutePath();
         }
@@ -125,16 +127,9 @@ public class ScriptStore {
         Path file = getStoreFile();
         if (!Files.exists(file)) {
             log.info("脚本文件不存在，写入内置示例脚本: {}", file.toAbsolutePath());
-            synchronized (scripts) {
-                scripts.clear();
-                for (Script s : defaultScripts()) {
-                    scripts.put(s.getId(), s);
-                }
-                save();
-            }
+            loadDefaults();
             return;
         }
-
         try {
             List<Script> loaded = JsonUtils.mapper()
                     .readValue(file.toFile(), new TypeReference<List<Script>>() {
@@ -147,24 +142,33 @@ public class ScriptStore {
             }
             log.info("已加载 {} 个脚本: {}", loaded.size(), file.toAbsolutePath());
         } catch (Exception e) {
-            // 解析失败不让后端崩溃：备份坏文件 → 用内置示例脚本启动，日志给出明确指引
-            Path backup = file.resolveSibling("scripts.json.bak-" + System.currentTimeMillis());
-            try {
-                Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException moveEx) {
-                log.warn("备份损坏的脚本文件失败: {}", file.toAbsolutePath(), moveEx);
+            handleCorruptedFile(file, e);
+        }
+    }
+
+    /** 文件损坏：备份坏文件并改用内置示例启动，日志给出恢复指引 */
+    private void handleCorruptedFile(Path file, Exception cause) {
+        Path backup = file.resolveSibling("scripts.json.bak-" + System.currentTimeMillis());
+        try {
+            Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException moveEx) {
+            log.warn("备份损坏的脚本文件失败: {}", file.toAbsolutePath(), moveEx);
+        }
+        log.error("scripts.json 解析失败（可能是文件损坏/编码问题/手工编辑出错），"
+                        + "坏文件已备份到: {} ；本次启动改用内置示例脚本。"
+                        + "请检查文件后重命名回 scripts.json 再重启即可恢复。原文件: {}",
+                backup.toAbsolutePath(), file.toAbsolutePath(), cause);
+        loadDefaults();
+    }
+
+    /** 清空并用内置示例脚本填充内存，随即落盘 */
+    private void loadDefaults() {
+        synchronized (scripts) {
+            scripts.clear();
+            for (Script s : defaultScripts()) {
+                scripts.put(s.getId(), s);
             }
-            log.error("scripts.json 解析失败（可能是文件损坏/编码问题/手工编辑出错），"
-                            + "坏文件已备份到: {} ；本次启动改用内置示例脚本。"
-                            + "请检查文件后重命名回 scripts.json 再重启即可恢复。原文件: {}",
-                    backup.toAbsolutePath(), file.toAbsolutePath(), e);
-            synchronized (scripts) {
-                scripts.clear();
-                for (Script s : defaultScripts()) {
-                    scripts.put(s.getId(), s);
-                }
-                save();
-            }
+            save();
         }
     }
 
