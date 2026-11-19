@@ -77,6 +77,25 @@ const loginError = ref("");
 const loggingIn = ref(false);
 let pendingWrite = null; // 登录成功后要重试的请求
 
+/** 探测写权限：未认证则弹登录框，返回 false；已认证返回 true */
+const probeAuth = async () => {
+  if (auth.hasCredentials()) return true; // 会话内已有凭据，直接放行
+  try {
+    await requestJson(`${API}/auth/status`, {}, fetch, getApiToken());
+    return true;
+  } catch (e) {
+    if (isUnauthorized(e)) {
+      // 挂起"进入编辑态"动作，登录成功后由 submitLogin 自动执行
+      pendingWrite = doNewScript;
+      loginReason.value = "新建 / 修改脚本需要登录，请先登录（演示账号见帮助页）。";
+      loginError.value = "";
+      showLoginDialog.value = true;
+      return false;
+    }
+    return true; // 探测接口异常（如旧后端无此接口）不阻塞
+  }
+};
+
 /** 带认证的写请求：401 时弹登录框，登录成功后自动重试 */
 const writeRequest = async (url, options = {}) => {
   const doRequest = () => requestJson(url, { ...options, headers: { ...(options.headers || {}), ...auth.headers() } }, fetch, getApiToken());
@@ -675,7 +694,7 @@ const selectScript = (s) => {
   loadScriptExecutions(s.id);
 };
 
-const newScript = () => {
+const doNewScript = () => {
   selectedScriptId.value = null;
   editing.value = true;
   form.id = "";
@@ -692,6 +711,12 @@ const newScript = () => {
   canvasMode.value = true;
   lastCanvasScript.value = "";
   refreshSavedSnapshot();
+};
+
+/** 新建脚本：先探测写权限，未登录弹登录框，登录后自动进入编辑态 */
+const newScript = async () => {
+  if (!(await probeAuth())) return;
+  doNewScript();
 };
 
 const cancelEdit = () => {

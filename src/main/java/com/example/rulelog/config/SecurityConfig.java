@@ -38,6 +38,8 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                         // 审计仅管理员
                         .requestMatchers("/api/audit").hasRole("ADMIN")
+                        // 认证状态探测：需认证（返回 401 让前端弹登录框）
+                        .requestMatchers("/api/auth/status").hasAnyRole("ADMIN", "VIEWER")
                         // 执行类接口公开（不修改持久数据，Demo 核心体验）
                         .requestMatchers(HttpMethod.POST,
                                 "/api/executions/run", "/api/executions/rerun", "/api/executions/check").permitAll()
