@@ -40,7 +40,12 @@
               v-for="s in visibleScripts"
               :key="s.id"
               :class="{ selected: selectedScriptId === s.id }"
+              role="button"
+              tabindex="0"
+              :aria-selected="selectedScriptId === s.id"
               @click="selectScript(s)"
+              @keydown.enter="selectScript(s)"
+              @keydown.space.prevent="selectScript(s)"
             >
               <div class="script-item-info">
                 <div class="script-item-name">{{ s.name }}</div>
@@ -730,15 +735,26 @@ const onCardFocusIn = (e) => {
   recordHistory();
 };
 
-// 画布编辑快捷键：Ctrl+Z 撤销 / Ctrl+Y 或 Ctrl+Shift+Z 重做（仅在输入框外触发，避免干扰打字）
+// 全局快捷键：Ctrl+S 保存；画布模式额外支持 Ctrl+Z/Y 撤销重做、Delete 删选中卡
 const onKeydown = (e) => {
-  if (!canvasMode.value) return;
   const mod = e.ctrlKey || e.metaKey;
-  if (!mod) return;
   const tag = e.target && e.target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-  if (e.key === "z" && !e.shiftKey) { e.preventDefault(); undoCards(); }
-  else if (e.key === "y" || (e.key === "z" && e.shiftKey)) { e.preventDefault(); redoCards(); }
+  const inInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  // Ctrl+S 保存（编辑态，输入框内也生效，阻止浏览器保存页面）
+  if (mod && (e.key === "s" || e.key === "S")) {
+    e.preventDefault();
+    if (editing.value) saveScript();
+    return;
+  }
+  if (!canvasMode.value || inInput) return;
+  if (mod) {
+    if (e.key === "z" && !e.shiftKey) { e.preventDefault(); undoCards(); }
+    else if (e.key === "y" || (e.key === "z" && e.shiftKey)) { e.preventDefault(); redoCards(); }
+  } else if (e.key === "Delete" && selectedCardId.value) {
+    // 删除当前选中的卡片
+    const idx = canvasCards.value.findIndex((c) => c.id === selectedCardId.value);
+    if (idx >= 0) { e.preventDefault(); removeCard(idx); selectedCardId.value = null; }
+  }
 };
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
