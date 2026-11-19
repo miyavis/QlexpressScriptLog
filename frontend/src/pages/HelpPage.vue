@@ -91,6 +91,16 @@
     </div>
 
     <div class="help-card">
+      <h2>登录与权限</h2>
+      <ul class="hint ul">
+        <li>公开 Demo 采用<strong>读公开、写需登录</strong>：浏览脚本 / 执行记录 / 跑脚本无需登录。</li>
+        <li>新建 / 修改 / 删除脚本、评审、发布、分支、清空记录等写操作会弹出登录框。</li>
+        <li>演示账号：<code>admin / admin123</code>（管理员）或 <code>viewer / viewer123</code>（只读用户，也可写，仅审计日志不可见）。</li>
+        <li>登录状态在当前浏览器会话内保持；脚本执行沙箱为空白名单，脚本无法访问 Java 类 / 系统资源。</li>
+      </ul>
+    </div>
+
+    <div class="help-card">
       <h2>审计与安全</h2>
       <ul class="hint ul">
         <li>关键操作（新建/修改/删除/执行/评审/发布）记入审计日志（H2），脚本页「审计日志」可查看。</li>

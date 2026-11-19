@@ -25,7 +25,7 @@
 | QLExpress | 4.1.4 (`com.alibaba:qlexpress4`) |
 | OpenTelemetry | 1.31.0（SDK + OTLP HTTP，traceId 与平台对齐） |
 | 审计库 | H2 嵌入式（内存模式，只增不改） |
-| 安全 | Spring Security（RBAC 可选启用） |
+| 安全 | Spring Security（读公开 / 写需登录） |
 | Vue | 3.4 |
 | Vite | 4 |
 
@@ -68,7 +68,7 @@
 
 8. **安全边界显式化**：脚本执行有超时（默认 5s）；`Express4Engine` 用空白名单 `QLSecurityStrategy.whiteList(emptySet)` 禁止脚本访问任何 Java 类/系统资源（测试已验证 RCE 被拦），业务能力只走注册函数。
 
-9. **简单可实现优先**：脚本与执行记录持久化到 JSON 文件（相对路径锚定应用所在目录；原子写、坏文件兜底），重启不丢。审计日志另存 H2 嵌入式 DB（追加写、只增不改），脚本可标记分支/评审状态/环境（dev/staging/prod）。RBAC 默认关闭（Demo 零配置可用），生产可开启并接外部用户源。
+9. **简单可实现优先**：脚本与执行记录持久化到 JSON 文件（相对路径锚定应用所在目录；原子写、坏文件兜底），重启不丢。审计日志另存 H2 嵌入式 DB（追加写、只增不改），脚本可标记分支/评审状态/环境（dev/staging/prod）。RBAC 采用读公开、写需登录（Demo 免登录浏览，写操作弹登录框），生产可改密码并接外部用户源。
 
 ---
 
@@ -95,7 +95,7 @@ src/main/java/com/example/rulelog/
 │   ├── OtelTraceService.java        OpenTelemetry 桥接（执行→trace、调用→span、步骤→event）
 │   └── OtelIdGenerator.java         OTel traceId 与平台 traceId 对齐
 ├── config/
-│   └── SecurityConfig.java          RBAC 可选启用（admin/viewer）
+│   └── SecurityConfig.java          读公开/写需登录（admin/viewer）
 ├── store/
 │   ├── ScriptStore.java             脚本 JSON 文件持久化（data/scripts.json）
 │   ├── ExecutionRecordStore.java    执行记录库（内存 LinkedHashMap + 落盘 JSON，重启不丢）
@@ -533,7 +533,7 @@ for each card in cards:
 1. **执行记录落盘 JSON**：`ExecutionRecordStore` 用 `LinkedHashMap`（插入顺序 + `synchronized`）并原子写到 `data/executions.json`，重启不丢；坏文件安全降级为空库。每次执行另带 W3C `traceparent` 字段（由 traceId 映射）。
    - **审计日志（H2）**：`AuditStore` 用嵌入式 H2 表 `audit_log` 记录 CREATE/UPDATE/DELETE/RUN/REVIEW/BRANCH/PUBLISH 操作（谁/何时/动作/对象），`GET /api/audit` 查询；脚本页「审计日志」按钮可展开查看。H2 内存模式，重启清空审计。
    - **OpenTelemetry**：`OtelTraceService` 把每次执行映射为 OTel trace（traceId 与平台一致），Service 调用为 child span、脚本打印为 event；`app.otel.endpoint` 留空时只建 span 不导出（零告警），配置 OTLP/HTTP 端点后推送 collector。
-   - **RBAC（可选）**：`app.security.enabled=false` 默认放行；开启后内置 admin/viewer 用户（密码可配），`/api/audit` 仅 ADMIN，其余 API 需认证。生产请改默认密码并接外部用户源。
+   - **RBAC（读公开、写需登录）**：`app.security.enabled` 默认 true——GET 与执行类接口公开，脚本增删改/评审/发布/分支/清空记录需认证（内置 admin / viewer，密码可配），`/api/audit` 仅 ADMIN。前端遇到 401 自动弹登录框并重试。本地开发可设 `APP_SECURITY_ENABLED=false` 完全免登录。生产请改默认密码并接外部用户源。
    - **分支/评审/环境**：脚本带 `branch`（默认 main）、`reviewStatus`（draft→review→published/驳回）、`environment`（dev/staging/prod）；保存已发布脚本自动回草稿，需重新评审。前端提供分支切换、评审按钮、环境筛选。
 2. **前后端单测**：前端（`cd frontend && npm run test`，140 个用例）覆盖 composables 纯逻辑（画布生成/反解析/合并启发式/hash/结构配对、函数注册表、统一 API 封装、行级日志展示（含执行摘要）、执行时间轴、调用拓扑、导出、脚本导入导出、版本历史、行级 diff、列表筛选）+ store 导出完整性 + round-trip 性质测试（画布生成的脚本反解析再生成必须逐字一致）；后端（`./gradlew test`）覆盖函数注册表、错误摘要器、版本历史、引擎安全策略（沙箱白名单）、脚本持久化（原子写）、请求校验、行号匹配、执行链路集成、保存前静态校验、历史参数重跑。
 3. **脚本文件路径（换机器必看）**：`data` 为相对路径时锚定**应用所在目录**（开发运行=项目根目录；打 jar 运行=jar 所在目录），项目拷到任何机器/位置都能找到，不受“从哪个目录启动”影响。给别人的机器上请**一起拷 `data/scripts.json`**，否则对方首次启动只会看到内置示例脚本；若该文件损坏/手工编辑写坏，程序会在日志里备份为 `scripts.json.bak-时间戳` 并用内置示例启动，修正后重命名回 `scripts.json` 重启即可恢复。启动日志会打印“脚本数据目录（解析后绝对路径）”，可用来确认实际读取位置。
