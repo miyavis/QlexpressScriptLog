@@ -177,7 +177,20 @@ public class ScriptStore {
                 snapshot = new ArrayList<>(scripts.values());
             }
             String json = JsonUtils.pretty(snapshot);
-            Files.write(file, json.getBytes(StandardCharsets.UTF_8));
+            // 原子写：先写同目录临时文件，再 ATOMIC_MOVE 覆盖目标。
+            // 避免写到一半崩溃/断电留下半截 JSON，下次启动误判为损坏而丢全量脚本。
+            Path tmp = Files.createTempFile(file.getParent(), "scripts-", ".tmp");
+            try {
+                Files.write(tmp, json.getBytes(StandardCharsets.UTF_8));
+                try {
+                    Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                    // 个别文件系统不支持原子移动，降级为普通覆盖（仍比直接写目标安全）
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("保存脚本文件失败: " + file.toAbsolutePath(), e);
         }

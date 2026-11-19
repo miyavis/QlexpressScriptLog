@@ -22,11 +22,25 @@ import { buildScriptExport, parseScriptImport, dedupeImportName } from "./compos
 import { buildVersionList, restoreVersion } from "./composables/versionHistory.js";
 import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
+import { requestJson } from "./composables/apiClient.js";
 
 const API = "/api";
 
+/** 可选 API token：从 localStorage 读（与后端 app.api-token 对应），Demo 默认空 */
+const getApiToken = () => {
+  try {
+    return localStorage.getItem("rulelog-api-token") || "";
+  } catch (e) {
+    return "";
+  }
+};
+
+/** 编辑器行高：与 styles/scripts.css .code-area / .gutter-line 的 line-height:22px 保持一致 */
+const EDITOR_LINE_HEIGHT = 22;
+
 /* ---------- 视图状态 ---------- */
 const view = ref("scripts"); // 'scripts' | 'executions'
+const isRunning = ref(false); // 执行中：防重复提交，按钮可据此禁用
 
 /* ---------- 脚本管理状态 ---------- */
 const scripts = ref([]);
@@ -391,7 +405,7 @@ const onEditorMouseMove = (e) => {
   const textarea = e.target;
   if (!textarea) return;
   const rect = textarea.getBoundingClientRect();
-  const lineHeight = 22;
+  const lineHeight = EDITOR_LINE_HEIGHT;
   const relativeY = e.clientY - rect.top - parseFloat(getComputedStyle(textarea).paddingTop || '10');
   const lineNo = Math.floor(relativeY / lineHeight) + 1;
   if (lineNo >= 1 && lineNo <= scriptLines.value.length) {
@@ -630,10 +644,9 @@ const onLogLineClick = (lineNo) => {
 /* ---------- 脚本管理 API ---------- */
 const loadScripts = async () => {
   try {
-    const res = await fetch(`${API}/scripts`);
-    scripts.value = await res.json();
+    scripts.value = await requestJson(`${API}/scripts`, {}, fetch, getApiToken());
   } catch (e) {
-    alert("加载脚本列表失败：" + e);
+    alert("加载脚本列表失败：" + e.message);
   }
 };
 
@@ -731,46 +744,40 @@ const saveScript = async (keepOpen = false) => {
   };
 
   try {
-    let res;
     if (form.id) {
-      res = await fetch(`${API}/scripts/${form.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      await requestJson(`${API}/scripts/${form.id}`, {
+        method: "PUT", body: JSON.stringify(payload)
+      }, fetch, getApiToken());
     } else {
-      res = await fetch(`${API}/scripts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      await requestJson(`${API}/scripts`, {
+        method: "POST", body: JSON.stringify(payload)
+      }, fetch, getApiToken());
     }
-    if (!res.ok) throw new Error(await res.text());
     refreshSavedSnapshot();
     await loadScripts();
     if (!keepOpen) {
       cancelEdit();
     }
   } catch (e) {
-    alert("保存脚本失败：" + e);
+    alert("保存脚本失败：" + e.message);
   }
 };
 
 const deleteScript = async (id) => {
   if (!confirm("确定删除该脚本吗？")) return;
   try {
-    const res = await fetch(`${API}/scripts/${id}`, { method: "DELETE" });
-    if (!res.ok) throw new Error(await res.text());
+    await requestJson(`${API}/scripts/${id}`, { method: "DELETE" }, fetch, getApiToken());
     await loadScripts();
     if (selectedScriptId.value === id) {
       cancelEdit();
     }
   } catch (e) {
-    alert("删除失败：" + e);
+    alert("删除失败：" + e.message);
   }
 };
 
 const runScript = async () => {
+  if (isRunning.value) return; // 防重复提交
   if (!form.id) {
     alert("请先选择或新建一个脚本");
     return;
@@ -789,32 +796,32 @@ const runScript = async () => {
     alert("默认参数不是合法的 JSON");
     return;
   }
+  const scriptId = form.id;
+  isRunning.value = true;
   try {
-    const res = await fetch(`${API}/executions/run?scriptId=${encodeURIComponent(form.id)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params)
-    });
-    if (!res.ok) throw new Error(await res.text());
-    const record = await res.json();
+    const record = await requestJson(`${API}/executions/run?scriptId=${encodeURIComponent(scriptId)}`, {
+      method: "POST", body: JSON.stringify(params)
+    }, fetch, getApiToken());
+    // 竞态保护：执行期间用户切到别的脚本，就别把旧结果显示到当前页
+    if (form.id !== scriptId) return;
     // 执行完成后直接显示到右侧日志框（不跳转页面）
     selectedLogRecord.value = record;
     selectedLogTraceId.value = record.traceId;
     // 刷新该脚本的执行记录列表
-    await loadScriptExecutions(form.id);
-    // 如需查看全量记录，可手动切换到“执行记录”页
+    await loadScriptExecutions(scriptId);
   } catch (e) {
-    alert("执行脚本失败：" + e);
+    alert("执行脚本失败：" + e.message);
+  } finally {
+    isRunning.value = false;
   }
 };
 
 /* ---------- 执行记录 API ---------- */
 const loadExecutions = async () => {
   try {
-    const res = await fetch(`${API}/executions?limit=100`);
-    executions.value = await res.json();
+    executions.value = await requestJson(`${API}/executions?limit=100`, {}, fetch, getApiToken());
   } catch (e) {
-    alert("加载执行记录失败：" + e);
+    alert("加载执行记录失败：" + e.message);
   }
 };
 
@@ -822,8 +829,8 @@ const loadExecutions = async () => {
 const loadScriptExecutions = async (scriptId) => {
   if (!scriptId) return;
   try {
-    const res = await fetch(`${API}/executions/script/${encodeURIComponent(scriptId)}?limit=50`);
-    scriptExecutions.value = await res.json();
+    scriptExecutions.value = await requestJson(
+      `${API}/executions/script/${encodeURIComponent(scriptId)}?limit=50`, {}, fetch, getApiToken());
     // 如果之前选中的日志不在新列表中，清空选中
     if (selectedLogTraceId.value && !scriptExecutions.value.some(r => r.traceId === selectedLogTraceId.value)) {
       selectedLogTraceId.value = null;
@@ -972,16 +979,17 @@ const importScriptFromFile = async (ev) => {
   if (!file) return;
   try {
     const text = await file.text();
+    // 导入文件大小上限（与后端 100KB 脚本上限对齐，留一点余量给元数据）
+    if (text.length > 200_000) {
+      alert("导入文件过大（超过 200KB），请检查内容");
+      return;
+    }
     const req = parseScriptImport(text);
     // 重名自动改名：打折规则 → 打折规则（导入）→ 打折规则（导入 2）…避免和已有脚本混淆
     req.name = dedupeImportName(req.name, scripts.value.map((s) => s.name));
-    const res = await fetch(`${API}/scripts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json;charset=utf-8" },
-      body: JSON.stringify(req)
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const created = await res.json();
+    const created = await requestJson(`${API}/scripts`, {
+      method: "POST", body: JSON.stringify(req)
+    }, fetch, getApiToken());
     await loadScripts();
     if (created && created.id) {
       const fresh = scripts.value.find((s) => s.id === created.id);
@@ -1021,14 +1029,12 @@ const registryFunctions = ref([...BUILTIN_FUNCTIONS]);
 
 const loadFunctionRegistry = async () => {
   try {
-    const res = await fetch(`${API}/functions`);
-    if (!res.ok) throw new Error(res.status);
-    const fns = normalizeFunctions(await res.json());
+    const fns = normalizeFunctions(await requestJson(`${API}/functions`, {}, fetch, getApiToken()));
     if (fns.length) {
       registryFunctions.value = fns;
     }
   } catch (e) {
-    console.warn("函数注册表拉取失败，使用内置函数兜底：" + e);
+    console.warn("函数注册表拉取失败，使用内置函数兜底：" + e.message);
   }
 };
 
@@ -1173,6 +1179,7 @@ export {
   saveScript,
   deleteScript,
   runScript,
+  isRunning,
   loadExecutions,
   loadScriptExecutions,
   downloadExecution,

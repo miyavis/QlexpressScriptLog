@@ -14,6 +14,7 @@ import com.example.rulelog.trace.StepLogger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -21,7 +22,8 @@ import java.util.Map;
  *
  * 1. 中文脚本：addAlias 把中文关键字/比较符映射到 QLExpress4 关键字与操作符
  * 2. 业务能力：addFunction 把 Spring Service 方法注册成中文函数
- * 3. 安全策略：默认 isolation 隔离策略禁止脚本访问 Java 类与对象成员，本项目设置为 open
+ * 3. 安全策略：默认 isolation 隔离策略禁止脚本访问 Java 类与对象成员，本项目使用空白名单
+ *    （whiteList(emptySet)）彻底禁止脚本碰 Java 类/系统资源，杜绝 RCE；业务能力只走注册函数
  * 4. 中文别名注册表：记录 脚本中文函数名 ↔ Java 方法签名 的映射，用于执行日志显示中文
  */
 @Component
@@ -50,7 +52,9 @@ public class Express4Engine {
 
     public Express4Engine(UserService userService, DiscountService discountService) {
         this.runner = new Express4Runner(InitOptions.builder()
-                .securityStrategy(QLSecurityStrategy.open())
+                // 安全：空白名单禁止脚本访问任何 Java 类/成员（IO、反射、System.exit 等被拦），
+                // 只放行通过 addFunction 注册的业务函数与 QLExpress 内置表达式（测试已验证不误伤业务脚本）
+                .securityStrategy(QLSecurityStrategy.whiteList(Collections.emptySet()))
                 .debug(false)
                 .traceExpression(true) // 开启表达式轨迹，用于按行号归属日志
                 .build());

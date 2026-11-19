@@ -327,9 +327,13 @@
                     :key="le.lineNo"
                     class="log-line-item"
                     :class="{ active: le.lineNo === hoverLineNo || activeLineSet.has(le.lineNo) }"
+                    role="button"
+                    tabindex="0"
                     @mouseenter="onLogLineEnter(le.lineNo)"
                     @mouseleave="onLogLineLeave()"
                     @click="onLogLineClick(le.lineNo)"
+                    @keydown.enter="onLogLineClick(le.lineNo)"
+                    @keydown.space.prevent="onLogLineClick(le.lineNo)"
                   >
                     <div class="log-line-header">
                       <span class="log-line-no">第 {{ le.lineNo }} 行</span>
@@ -407,7 +411,7 @@
 
             <div class="form-actions">
               <button class="btn-primary" @click="saveScript">保存</button>
-              <button class="btn-success" @click="runScript">执行脚本</button>
+              <button class="btn-success" :disabled="isRunning" @click="runScript">{{ isRunning ? "执行中…" : "执行脚本" }}</button>
               <button class="btn-secondary" @click="exportCurrentScript" title="导出成 JSON 文件，发给他人可导入">导出脚本</button>
               <button class="btn-delete" @click="deleteScript(form.id)">删除</button>
               <button class="btn-secondary" @click="cancelEdit">取消</button>
@@ -511,6 +515,7 @@ import {
   saveScript,
   deleteScript,
   runScript,
+  isRunning,
   loadExecutions,
   loadScriptExecutions,
   downloadExecution,

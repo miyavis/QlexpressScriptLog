@@ -50,6 +50,9 @@ h2 {
   transition: background 0.3s var(--ease), border-color 0.3s var(--ease), color 0.3s var(--ease), box-shadow 0.3s var(--ease), transform 0.18s var(--ease);
 }
 .btn-primary:active, .btn-success:active, .btn-secondary:active, .btn-delete:active, .mode-btn:active { transform: translateY(1px) scale(0.98); }
+.btn-primary:disabled, .btn-success:disabled, .btn-secondary:disabled, .btn-delete:disabled {
+  opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;
+}
 
 .btn-primary {
   background: var(--accent); color: #fff; padding: 8px 16px; border-radius: 9px;

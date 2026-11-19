@@ -110,7 +110,7 @@ src/main/java/com/example/rulelog/
     ├── JsonUtils.java               Jackson 工具
     └── ErrorSummarizer.java         执行错误中文摘要器（行号提取 + 中文分类 + 出错行内容 + 保留原始信息）
 ```
-前端（`frontend/`）：Vite 4 + Vue 3.4。**App.vue 是布局壳**（左侧菜单 + 内容区 + 页脚，全局样式都在这里）；页面在 `src/pages/`（ScriptsPage / ExecutionsPage / HelpPage）；共享状态与动作在 `src/store.js`（模块级单例）；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`scriptTransfer.js` 脚本导出/导入、`versionHistory.js` 版本历史、`diffPreview.js` 行级对比、`listFilters.js` 列表筛选、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 83 个用例，含 store 导出完整性冒烟测试）。
+前端（`frontend/`）：Vite 4 + Vue 3.4。**App.vue 是 43 行布局壳**（左侧菜单 + 内容区 + 页脚），全局样式已拆到 `src/styles/`（tokens 设计令牌 / base 通用原语 / scripts 与 executions 页面专属）；页面在 `src/pages/`（ScriptsPage / ExecutionsPage / HelpPage）；共享状态与动作在 `src/store.js`（模块级单例）；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`apiClient.js` 统一请求封装、`scriptTransfer.js` 脚本导出/导入、`versionHistory.js` 版本历史、`diffPreview.js` 行级对比、`listFilters.js` 列表筛选、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 116 个用例，含 store 导出完整性与 round-trip 性质测试）。
 
 ---
 
@@ -145,7 +145,7 @@ AOP 负责 Service 方法入口/出口，`StepLogger.log()` 负责方法内部�
 ## 环境要求
 
 - **后端**：JDK 8（构建用 Gradle Wrapper 7.6.4，无需本机安装 Gradle）
-- **前端**：Node.js 16+（Vite 4 要求，Node 16 可用）+ npm
+- **前端**：Node.js 18+（Vite 4 要求，Node 16 已 EOL，CI/Docker 均用 18）+ npm
 
 ---
 
@@ -191,7 +191,7 @@ java -Dfile.encoding=UTF-8 -jar build/libs/rule-log-1.0.0.jar
 
 | 工作流 | 触发 | 做什么 |
 |--------|------|--------|
-| **ci.yml** | 每次 push / PR | 后端单测（JDK 8 + Gradle）、前端单测与构建（Node 16），并行两个 job |
+| **ci.yml** | 每次 push / PR | 后端单测（JDK 8 + Gradle）、前端单测与构建（Node 18），并行两个 job |
 | **release.yml** | 推送 `v*` 标签（如 `v1.0.0`），或在 Actions 页手动触发 | 前后端全量单测 → 构建前端 → 打单 jar → **发布 GitHub Release 并附上 jar** |
 
 **发版三步**：
@@ -500,13 +500,14 @@ for each card in cards:
 
 ## 注意事项与扩展建议
 
-1. **执行记录仅保存在内存**：`ExecutionRecordStore` 使用 `ConcurrentHashMap`，重启后清空。生产环境建议替换为数据库（如 MySQL / PostgreSQL）持久化。
-2. **前端纯逻辑单测（Vitest）**：卡片生成/反解析/合并启发式/hash 校验/结构配对/函数注册表/导出/脚本导入导出/版本历史/行级 diff/列表筛选/store 导出完整性都有单元测试，改动 `frontend/src/composables/*` 或 `frontend/src/store.js` 后请跑 `cd frontend && npm run test`（83 个用例，含 round-trip 性质测试：画布生成的脚本反解析再生成必须逐字一致）；后端单测 `./gradlew test`（函数注册表 + 错误摘要器 + 版本历史，共 22 个用例）。
+1. **执行记录仅保存在内存**：`ExecutionRecordStore` 使用 `LinkedHashMap`（维护插入顺序，配合 `synchronized` 保证并发安全），重启后清空。生产环境建议替换为数据库（如 MySQL / PostgreSQL）持久化。
+2. **前后端单测**：前端（`cd frontend && npm run test`，116 个用例）覆盖 composables 纯逻辑（画布生成/反解析/合并启发式/hash/结构配对、函数注册表、统一 API 封装、导出、脚本导入导出、版本历史、行级 diff、列表筛选）+ store 导出完整性 + round-trip 性质测试（画布生成的脚本反解析再生成必须逐字一致）；后端（`./gradlew test`）覆盖函数注册表、错误摘要器、版本历史、引擎安全策略（沙箱白名单）、脚本持久化（原子写）、请求校验、行号匹配、执行链路集成。
 3. **脚本文件路径（换机器必看）**：`data` 为相对路径时锚定**应用所在目录**（开发运行=项目根目录；打 jar 运行=jar 所在目录），项目拷到任何机器/位置都能找到，不受“从哪个目录启动”影响。给别人的机器上请**一起拷 `data/scripts.json`**，否则对方首次启动只会看到内置示例脚本；若该文件损坏/手工编辑写坏，程序会在日志里备份为 `scripts.json.bak-时间戳` 并用内置示例启动，修正后重命名回 `scripts.json` 重启即可恢复。启动日志会打印“脚本数据目录（解析后绝对路径）”，可用来确认实际读取位置。
-4. **安全策略**：`Express4Engine` 使用 `QLSecurityStrategy.open()`，允许脚本访问所有 Java 类。生产环境建议改为白名单策略 `QLSecurityStrategy.whiteList(...)`，仅放行业务需要的 Service 方法。
-5. **脚本超时**：默认 5000 ms，可在 `application.yml` 的 `app.script-timeout-millis` 调整。
-6. **前端构建**：`npm run build` 会输出静态资源到 `frontend/dist`；配合 `./gradlew bootJar`（或 `./gradlew buildFrontend bootJar` 一条龙）可打进 jar 实现**单 jar 部署**（见快速启动第 3 节）。单独部署到 Nginx 也支持。
-7. **AOP 边界**：Spring AOP 拦截不了同一个 Bean 内部的自调用。Service 内部的关键业务步骤应由开发者显式调用 `StepLogger.log(步骤名, 详情)`。
+4. **安全策略（已加固）**：`Express4Engine` 使用**空白名单** `QLSecurityStrategy.whiteList(Collections.emptySet())`——脚本只能调用通过 `addFunction` 注册的业务函数与 QLExpress 内建表达式，**无法访问 Java 类/反射/文件系统/系统命令**（单元测试已验证恶意脚本被拦、业务脚本不误伤）。
+5. **可选 API 鉴权**：`application.yml` 的 `app.api-token` 默认空=关闭（Demo 零配置可用）；公网生产部署建议设置环境变量 `APP_API_TOKEN=xxx` 启用——启用后所有 `/api/*` 需带 `X-Api-Token` 头，否则 401。前端在浏览器控制台执行 `localStorage.setItem("rulelog-api-token", "xxx")` 即可让页面带上该头（静态资源不受保护，页面仍可打开）。
+6. **脚本超时**：默认 5000 ms，可在 `application.yml` 的 `app.script-timeout-millis` 调整。
+7. **前端构建**：`npm run build` 会输出静态资源到 `frontend/dist`；配合 `./gradlew bootJar`（或 `./gradlew buildFrontend bootJar` 一条龙）可打进 jar 实现**单 jar 部署**（见快速启动第 3 节）。单独部署到 Nginx 也支持。
+8. **AOP 边界**：Spring AOP 拦截不了同一个 Bean 内部的自调用。Service 内部的关键业务步骤应由开发者显式调用 `StepLogger.log(步骤名, 详情)`。
 
 ---
 
@@ -644,13 +645,12 @@ for each card in cards:
 
 ---
 
-## 云端演示部署（Docker / Render / Railway）
+## 云端演示部署（Docker / Railway）
 
 仓库根目录提供一套容器化部署文件，把前端构建产物内嵌进 Spring Boot Jar，单进程对外提供服务：
 
 - [`Dockerfile`](Dockerfile)：多阶段构建（Node 18 构建前端 → Gradle 打 Jar → JRE 17 运行），监听 Railway 注入的 `$PORT`
-- [`render.yaml`](render.yaml)：Render Blueprint（免费实例，健康检查 `/api/functions`）
 - [`.dockerignore`](.dockerignore)：排除构建产物、本地数据与 IDE 文件
-- [`DOCKER_DEPLOY.md`](DOCKER_DEPLOY.md)：Railway / Render 的部署步骤
+- [`DOCKER_DEPLOY.md`](DOCKER_DEPLOY.md)：Railway 部署步骤
 
 免费实例会休眠、重启后内存执行记录清空，仅适合演示；生产请自行接数据库并收紧安全策略。

@@ -91,10 +91,11 @@ public class RuleExecutionService {
         record.setParams(actualParams);
         record.setStartTime(System.currentTimeMillis());
 
-        StepLogger.startTrace(traceId);
-        RuleTraceContext.set(traceId);
         QLResult qlResult = null;
         try {
+            // startTrace/set 必须放进 try：万一它们自身异常，finally 仍能清理 ThreadLocal，避免上下文泄漏到后续请求
+            StepLogger.startTrace(traceId);
+            RuleTraceContext.set(traceId);
             qlResult = engine.execute(script.getContent(), actualParams, timeoutMillis);
             record.setResult(qlResult.getResult());
             record.setSuccess(true);
@@ -129,6 +130,10 @@ public class RuleExecutionService {
         // 收集所有已注册的中文函数名
         Set<String> chineseNames = aliasRegistry.getAllChineseNames();
 
+        // 同名函数按出现顺序依次分配行号（避免多次调用全堆到第一行）
+        com.example.rulelog.util.LineMatcher matcher =
+                new com.example.rulelog.util.LineMatcher(lines);
+
         // 初始化所有包含中文函数名的行
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
@@ -162,10 +167,10 @@ public class RuleExecutionService {
             calls.sort((a, b) -> Long.compare(a.getStartTime(), b.getStartTime()));
         }
 
-        // 将每个调用分配到脚本中包含其中文名的行号
+        // 将每个调用分配到脚本中包含其中文名的行号（同名按出现顺序依次消费）
         if (calls != null) {
             for (ServiceCallLog call : calls) {
-                Integer targetLine = findLineByChineseName(lines, call.getChineseName());
+                Integer targetLine = matcher.next(call.getChineseName());
                 if (targetLine == null) {
                     // 找不到匹配行，放到最后一行
                     targetLine = lines.length;
@@ -185,7 +190,7 @@ public class RuleExecutionService {
         // 递归处理子调用，分配到父调用所在行
         if (calls != null) {
             for (ServiceCallLog call : calls) {
-                groupChildrenByLine(record, call, lines);
+                groupChildrenByLine(record, call, lines, matcher);
             }
         }
 
@@ -269,30 +274,9 @@ public class RuleExecutionService {
         }
     }
 
-    /** 在脚本行中查找包含指定中文函数名的行号（从1开始），找不到返回 null */
-    private Integer findLineByChineseName(String[] lines, String chineseName) {
-        if (chineseName == null) {
-            return null;
-        }
-        for (int i = 0; i < lines.length; i++) {
-            if (lines[i].contains(chineseName)) {
-                return i + 1;
-            }
-        }
-        return null;
-    }
-
-    /** 获取第一个活跃行号 */
-    private Integer firstActiveLine(Map<Integer, LineExecution> lineExecutions) {
-        if (lineExecutions == null || lineExecutions.isEmpty()) {
-            return null;
-        }
-        return lineExecutions.keySet().iterator().next();
-    }
-
     /** 递归处理子调用，分配到父调用所在行 */
     private void groupChildrenByLine(RuleExecutionRecord record, ServiceCallLog parent,
-                                     String[] lines) {
+                                     String[] lines, com.example.rulelog.util.LineMatcher matcher) {
         List<ServiceCallLog> children = parent.getChildren();
         if (children == null) {
             return;
@@ -301,8 +285,8 @@ public class RuleExecutionService {
         children.sort((a, b) -> Long.compare(a.getStartTime(), b.getStartTime()));
         Integer parentLine = findParentLine(record, parent);
         for (ServiceCallLog child : children) {
-            // 子调用优先分配到父调用所在行，否则按中文名查找行号
-            Integer targetLine = parentLine != null ? parentLine : findLineByChineseName(lines, child.getChineseName());
+            // 子调用优先分配到父调用所在行，否则按中文名查找下一个匹配行
+            Integer targetLine = parentLine != null ? parentLine : matcher.next(child.getChineseName());
             if (targetLine == null) {
                 targetLine = lines.length;
             }
@@ -315,7 +299,7 @@ public class RuleExecutionService {
                 record.getLineExecutions().put(targetLine, le);
             }
             le.addCall(child);
-            groupChildrenByLine(record, child, lines);
+            groupChildrenByLine(record, child, lines, matcher);
         }
     }
 

@@ -17,7 +17,12 @@
               v-for="r in visibleExecutions"
               :key="r.traceId"
               :class="{ selected: selectedTraceId === r.traceId }"
+              role="button"
+              tabindex="0"
+              :aria-selected="selectedTraceId === r.traceId"
               @click="selectExecution(r)"
+              @keydown.enter="selectExecution(r)"
+              @keydown.space.prevent="selectExecution(r)"
             >
               <div class="exec-item-main">
                 <div class="exec-item-trace">{{ r.traceId }}</div>

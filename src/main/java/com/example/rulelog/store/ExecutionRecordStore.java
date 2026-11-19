@@ -53,12 +53,13 @@ public class ExecutionRecordStore {
         }
     }
 
-    /** 查询某脚本的所有执行记录（最近优先） */
+    /** 查询某脚本的所有执行记录（最近优先）；循环外只取一次快照，避免每轮 new ArrayList */
     public List<RuleExecutionRecord> listByScript(String scriptId, int limit) {
         synchronized (records) {
+            List<RuleExecutionRecord> all = new ArrayList<>(records.values());
             List<RuleExecutionRecord> result = new ArrayList<>();
-            for (int i = records.size() - 1; i >= 0 && result.size() < limit; i--) {
-                RuleExecutionRecord r = new ArrayList<>(records.values()).get(i);
+            for (int i = all.size() - 1; i >= 0 && result.size() < limit; i--) {
+                RuleExecutionRecord r = all.get(i);
                 if (scriptId.equals(r.getScriptId())) {
                     result.add(r);
                 }
