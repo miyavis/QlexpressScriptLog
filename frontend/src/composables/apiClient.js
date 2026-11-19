@@ -54,7 +54,9 @@ export const requestJson = async (url, fetchOptions = {}, fetchImpl = fetch, tok
   };
   const res = await fetchImpl(url, opts);
   if (!res.ok) {
-    throw new Error(await parseErrorMessage(res));
+    const err = new Error(await parseErrorMessage(res));
+    err.status = res.status; // 供调用方识别 401 触发登录
+    throw err;
   }
   if (res.status === 204) {
     return null;

@@ -48,6 +48,16 @@ describe("requestJson（统一请求）", () => {
     await expect(requestJson("/api/x", {}, fetchMock, "")).rejects.toThrow("脚本内容不能为空");
   });
 
+  it("错误携带 HTTP status（供 401 登录拦截识别）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(fakeRes(401, "Unauthorized"));
+    try {
+      await requestJson("/api/x", {}, fetchMock, "");
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect(e.status).toBe(401);
+    }
+  });
+
   it("204 无内容返回 null", async () => {
     const fetchMock = vi.fn().mockResolvedValue(fakeRes(204, ""));
     expect(await requestJson("/api/x", {}, fetchMock, "")).toBeNull();

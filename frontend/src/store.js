@@ -23,6 +23,7 @@ import { buildVersionList, restoreVersion } from "./composables/versionHistory.j
 import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
+import { createAuth, isUnauthorized } from "./composables/authRequest.js";
 import { trimToasts } from "./composables/toast.js";
 import { makeHistory, pushHistory, popUndo, popRedo, canUndo, canRedo } from "./composables/historyStack.js";
 import { newTestCase, parseCaseParams, summarizeResults } from "./composables/testCases.js";
@@ -65,6 +66,65 @@ const notify = (message, type = "info") => {
   }
 };
 const dismissToast = (id) => { toasts.value = toasts.value.filter((t) => t.id !== id); };
+
+/* ---------- 认证（读公开、写需登录） ---------- */
+const auth = createAuth();
+const showLoginDialog = ref(false);
+const loginReason = ref("");
+const loginUser = ref("admin");
+const loginPass = ref("");
+const loginError = ref("");
+const loggingIn = ref(false);
+let pendingWrite = null; // 登录成功后要重试的请求
+
+/** 带认证的写请求：401 时弹登录框，登录成功后自动重试 */
+const writeRequest = async (url, options = {}) => {
+  const doRequest = () => requestJson(url, { ...options, headers: { ...(options.headers || {}), ...auth.headers() } }, fetch, getApiToken());
+  try {
+    return await doRequest();
+  } catch (e) {
+    if (isUnauthorized(e)) {
+      pendingWrite = doRequest;
+      loginReason.value = "该操作需要登录后才能执行，请输入账号密码。";
+      loginError.value = "";
+      showLoginDialog.value = true;
+      throw e; // 让调用方的 catch 处理（弹窗会接管重试）
+    }
+    throw e;
+  }
+};
+
+/** 提交登录：先存凭据，再用新凭据重试挂起的写请求 */
+const submitLogin = async () => {
+  if (!loginUser.value || !loginPass.value) {
+    loginError.value = "请输入账号和密码";
+    return;
+  }
+  loggingIn.value = true;
+  loginError.value = "";
+  // 先保存用户输入的凭据，重试时 writeRequest 会带上 Authorization 头
+  auth.set(loginUser.value, loginPass.value);
+  try {
+    if (pendingWrite) {
+      await pendingWrite(); // 带新凭据重试
+      pendingWrite = null;
+    }
+    showLoginDialog.value = false;
+    notify("登录成功", "success");
+  } catch (e) {
+    auth.clear(); // 凭据错误，清除
+    loginError.value = e.status === 401 ? "账号或密码错误，请重试" : (e.message || "登录失败");
+  } finally {
+    loggingIn.value = false;
+  }
+};
+
+const cancelLogin = () => {
+  showLoginDialog.value = false;
+  pendingWrite = null;
+  loginError.value = "";
+};
+
 const callViewMode = ref("tree"); // 调用视图：'tree' 树形 | 'topo' 拓扑
 const topologyNodes = computed(() =>
   selectedRecord.value ? buildTopology(selectedRecord.value.calls) : []
@@ -718,13 +778,13 @@ const saveScript = async (keepOpen = false) => {
 
   try {
     if (form.id) {
-      await requestJson(`${API}/scripts/${form.id}`, {
+      await writeRequest(`${API}/scripts/${form.id}`, {
         method: "PUT", body: JSON.stringify(payload)
-      }, fetch, getApiToken());
+      });
     } else {
-      await requestJson(`${API}/scripts`, {
+      await writeRequest(`${API}/scripts`, {
         method: "POST", body: JSON.stringify(payload)
-      }, fetch, getApiToken());
+      });
     }
     refreshSavedSnapshot();
     versionMessage.value = "";
@@ -733,6 +793,7 @@ const saveScript = async (keepOpen = false) => {
       cancelEdit();
     }
   } catch (e) {
+    if (isUnauthorized(e)) return; // 登录弹窗已接管
     notify("保存脚本失败：" + e.message, "error");
   }
 };
@@ -740,12 +801,13 @@ const saveScript = async (keepOpen = false) => {
 const deleteScript = async (id) => {
   if (!confirm("确定删除该脚本吗？")) return;
   try {
-    await requestJson(`${API}/scripts/${id}`, { method: "DELETE" }, fetch, getApiToken());
+    await writeRequest(`${API}/scripts/${id}`, { method: "DELETE" });
     await loadScripts();
     if (selectedScriptId.value === id) {
       cancelEdit();
     }
   } catch (e) {
+    if (isUnauthorized(e)) return;
     notify("删除失败：" + e.message, "error");
   }
 };
@@ -795,11 +857,12 @@ const runScript = async () => {
 const clearExecutions = async () => {
   if (!confirm("确定清空所有执行记录吗？此操作不可恢复（审计日志保留）。")) return;
   try {
-    await requestJson(`${API}/executions`, { method: "DELETE" }, fetch, getApiToken());
+    await writeRequest(`${API}/executions`, { method: "DELETE" });
     executions.value = [];
     if (currentScript.value) await loadScriptExecutions(currentScript.value.id);
     notify("执行记录已清空", "success");
   } catch (e) {
+    if (isUnauthorized(e)) return;
     notify("清空失败：" + e.message, "error");
   }
 };
@@ -886,11 +949,12 @@ const reviewAction = async (action) => {
   const labels = { submit: "提交评审", approve: "通过评审并发布", reject: "驳回评审" };
   if (!confirm(`确定「${labels[action] || action}」吗？`)) return;
   try {
-    await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/review?action=${action}`,
-      { method: "POST" }, fetch, getApiToken());
+    await writeRequest(`${API}/scripts/${encodeURIComponent(form.id)}/review?action=${action}`,
+      { method: "POST" });
     await loadScripts();
     notify(`已${labels[action] || action}。`, "success");
   } catch (e) {
+    if (isUnauthorized(e)) return;
     notify("评审操作失败：" + e.message, "error");
   }
 };
@@ -901,11 +965,12 @@ const switchBranch = async () => {
   const name = prompt("输入分支名（新名字即创建新分支）：", (currentScript.value && currentScript.value.branch) || "main");
   if (!name || !name.trim()) return;
   try {
-    await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/branch?name=${encodeURIComponent(name.trim())}`,
-      { method: "POST" }, fetch, getApiToken());
+    await writeRequest(`${API}/scripts/${encodeURIComponent(form.id)}/branch?name=${encodeURIComponent(name.trim())}`,
+      { method: "POST" });
     await loadScripts();
     notify(`已切换到分支「${name.trim()}」。`, "success");
   } catch (e) {
+    if (isUnauthorized(e)) return;
     notify("切换分支失败：" + e.message, "error");
   }
 };
@@ -916,11 +981,12 @@ const publishVersion = async (ver) => {
   if (!no || !form.id) return;
   if (!confirm(`将 v${no} 标记为已发布版本？`)) return;
   try {
-    await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/publish?versionNo=${no}`,
-      { method: "POST" }, fetch, getApiToken());
+    await writeRequest(`${API}/scripts/${encodeURIComponent(form.id)}/publish?versionNo=${no}`,
+      { method: "POST" });
     await loadScripts();
     notify(`v${no} 已发布。`, "success");
   } catch (e) {
+    if (isUnauthorized(e)) return;
     notify("发布失败：" + e.message, "error");
   }
 };
@@ -1053,9 +1119,9 @@ const importScriptFromFile = async (ev) => {
     const req = parseScriptImport(text);
     // 重名自动改名：打折规则 → 打折规则（导入）→ 打折规则（导入 2）…避免和已有脚本混淆
     req.name = dedupeImportName(req.name, scripts.value.map((s) => s.name));
-    const created = await requestJson(`${API}/scripts`, {
+    const created = await writeRequest(`${API}/scripts`, {
       method: "POST", body: JSON.stringify(req)
-    }, fetch, getApiToken());
+    });
     await loadScripts();
     if (created && created.id) {
       const fresh = scripts.value.find((s) => s.id === created.id);
@@ -1063,6 +1129,7 @@ const importScriptFromFile = async (ev) => {
     }
     notify(`已导入脚本「${created.name}」`, "success");
   } catch (e) {
+    if (isUnauthorized(e)) return;
     notify(String(e.message || e), "error");
   }
 };
@@ -1378,6 +1445,14 @@ export {
   isLoadingScripts,
   isLoadingExecutions,
   clearExecutions,
+  showLoginDialog,
+  loginReason,
+  loginUser,
+  loginPass,
+  loginError,
+  loggingIn,
+  submitLogin,
+  cancelLogin,
   canUndoCards,
   canRedoCards,
   undoCards,

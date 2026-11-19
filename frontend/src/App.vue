@@ -27,12 +27,14 @@
       </footer>
     </div>
     <ToastHost />
+    <LoginDialog />
   </div>
 </template>
 
 <script setup>
 import { onMounted } from "vue";
 import ToastHost from "./components/ToastHost.vue";
+import LoginDialog from "./components/LoginDialog.vue";
 import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry } from "./store.js";
 import ScriptsPage from "./pages/ScriptsPage.vue";
 import ExecutionsPage from "./pages/ExecutionsPage.vue";
