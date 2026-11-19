@@ -23,7 +23,7 @@ import { buildVersionList, restoreVersion } from "./composables/versionHistory.j
 import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
-import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc } from "./composables/logPresentation.js";
+import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
 
@@ -133,42 +133,8 @@ const timelineStep = (dir) => {
   }
 };
 
-/** 执行摘要：供业务人员快速了解整体逻辑 */
-const execSummary = computed(() => {
-  if (!selectedLogRecord.value) return null;
-  const r = selectedLogRecord.value;
-  let totalCalls = 0;
-  let totalSteps = 0;
-  let totalExprs = 0;
-  let failedCalls = 0;
-  const callNames = new Set();
-  const stepNames = new Set();
-  for (const le of Object.values(r.lineExecutions || {})) {
-    totalCalls += le.calls?.length || 0;
-    totalSteps += le.steps?.length || 0;
-    totalExprs += le.expressions?.length || 0;
-    for (const c of le.calls || []) {
-      callNames.add(c.chineseName || c.serviceName);
-      if (!c.success) failedCalls++;
-    }
-    for (const s of le.steps || []) {
-      stepNames.add(s.stepName);
-    }
-  }
-  return {
-    success: r.success,
-    durationMs: r.durationMs,
-    totalCalls,
-    totalSteps,
-    totalExprs,
-    failedCalls,
-    callNames: Array.from(callNames),
-    stepNames: Array.from(stepNames),
-    result: r.result,
-    errorType: r.errorType,
-    errorMessage: r.errorMessage
-  };
-});
+/** 执行摘要：供业务人员快速了解整体逻辑（纯计算在 logPresentation.js） */
+const execSummary = computed(() => buildExecSummary(selectedLogRecord.value));
 
 const formatExprValue = (v) => {
   if (v == null) return "";

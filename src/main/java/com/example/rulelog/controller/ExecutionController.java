@@ -39,10 +39,25 @@ public class ExecutionController {
     public RuleExecutionRecord run(@RequestParam String scriptId,
                                    @RequestBody(required = false) java.util.Map<String, Object> params)
             throws Exception {
-        auditStore.record("user", "RUN", scriptId, params == null ? "" : String.valueOf(params));
+        RequestValidator.validateParams(params);
+        auditStore.record(currentActor(), "RUN", scriptId, params == null ? "" : String.valueOf(params));
         // 执行错误已被 RuleExecutionService 转成 record 内的 errorMessage 展示；
         // 这里不再包一层 RuntimeException（会把内部异常信息经 GlobalExceptionHandler 泄漏）
         return ruleExecutionService.run(scriptId, params);
+    }
+
+    /** 当前操作者：优先从 SecurityContext 取，未认证时为 anonymous */
+    private String currentActor() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+                return auth.getName();
+            }
+        } catch (Exception ignored) {
+            // 安全上下文未初始化（如单测），回退 anonymous
+        }
+        return "anonymous";
     }
 
     /** 执行记录列表（最近优先，limit 默认 50，归一到 1..200） */

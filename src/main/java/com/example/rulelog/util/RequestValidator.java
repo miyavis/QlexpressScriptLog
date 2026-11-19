@@ -11,6 +11,8 @@ public final class RequestValidator {
     public static final int MAX_CONTENT_LENGTH = 100_000;   // 脚本上限 100KB
     public static final int MAX_NAME_LENGTH = 200;
     public static final int MAX_LIMIT = 200;
+    public static final int MAX_PARAM_KEY_LENGTH = 128;     // 参数名上限
+    public static final int MAX_PARAM_COUNT = 200;          // 参数个数上限
 
     private RequestValidator() {
     }
@@ -36,5 +38,21 @@ public final class RequestValidator {
             return MAX_LIMIT;
         }
         return limit;
+    }
+
+    /** 执行参数校验：null 合法；参数名长度/个数超限、参数名 blank 均拒绝 */
+    public static void validateParams(java.util.Map<String, Object> params) {
+        if (params == null || params.isEmpty()) return;
+        if (params.size() > MAX_PARAM_COUNT) {
+            throw new BadRequestException("参数个数不能超过 " + MAX_PARAM_COUNT);
+        }
+        for (String key : params.keySet()) {
+            if (key == null || key.trim().isEmpty()) {
+                throw new BadRequestException("参数名不能为空");
+            }
+            if (key.length() > MAX_PARAM_KEY_LENGTH) {
+                throw new BadRequestException("参数名「" + key + "」过长（上限 " + MAX_PARAM_KEY_LENGTH + "）");
+            }
+        }
     }
 }

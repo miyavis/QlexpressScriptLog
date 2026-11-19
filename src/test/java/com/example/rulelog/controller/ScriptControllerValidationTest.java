@@ -38,4 +38,19 @@ class ScriptControllerValidationTest {
         assertEquals(200, RequestValidator.normalizeLimit(-1));
         assertEquals(200, RequestValidator.normalizeLimit(5000));
     }
+
+    @Test
+    void executionParamsAreValidated() {
+        java.util.Map<String, Object> ok = new java.util.LinkedHashMap<>();
+        ok.put("user", "张三");
+        assertDoesNotThrow(() -> RequestValidator.validateParams(ok));
+        // null 参数合法（用脚本默认值）
+        assertDoesNotThrow(() -> RequestValidator.validateParams(null));
+        // key 超长
+        java.util.Map<String, Object> longKey = new java.util.LinkedHashMap<>();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i <= RequestValidator.MAX_PARAM_KEY_LENGTH; i++) sb.append('k');
+        longKey.put(sb.toString(), "v");
+        assertThrows(BadRequestException.class, () -> RequestValidator.validateParams(longKey));
+    }
 }

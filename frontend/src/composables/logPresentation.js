@@ -35,6 +35,46 @@ export const callArgs = (call) => {
   }
 };
 
+/**
+ * 构建执行摘要：从执行记录聚合调用/步骤/表达式数量、失败数、去重名称（纯函数）。
+ * @param {object} record RuleExecutionRecord
+ * @returns 摘要对象；record 为空返回 null
+ */
+export const buildExecSummary = (record) => {
+  if (!record) return null;
+  let totalCalls = 0;
+  let totalSteps = 0;
+  let totalExprs = 0;
+  let failedCalls = 0;
+  const callNames = new Set();
+  const stepNames = new Set();
+  for (const le of Object.values(record.lineExecutions || {})) {
+    totalCalls += le.calls?.length || 0;
+    totalSteps += le.steps?.length || 0;
+    totalExprs += le.expressions?.length || 0;
+    for (const c of le.calls || []) {
+      callNames.add(c.chineseName || c.serviceName);
+      if (!c.success) failedCalls++;
+    }
+    for (const s of le.steps || []) {
+      stepNames.add(s.stepName);
+    }
+  }
+  return {
+    success: record.success,
+    durationMs: record.durationMs,
+    totalCalls,
+    totalSteps,
+    totalExprs,
+    failedCalls,
+    callNames: Array.from(callNames),
+    stepNames: Array.from(stepNames),
+    result: record.result,
+    errorType: record.errorType,
+    errorMessage: record.errorMessage
+  };
+};
+
 /** 服务调用结果格式化：去掉 JSON 引号 */
 export const callResult = (call) => {
   if (call.resultJson == null) return "";
