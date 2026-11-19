@@ -1,0 +1,94 @@
+/* ============================================================
+ * 设计令牌 + 全局基底
+ * 所有颜色/字体/圆角/阴影/动效曲线在此定义，页面样式只引用变量
+ * ============================================================ */
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", var(--font-ui);
+  --font-mono: "Cascadia Code", ui-monospace, SFMono-Regular, "SF Mono", Consolas, Menlo, monospace;
+
+  /* 墨色阶梯（冷灰） */
+  --ink-950: #10131a;
+  --ink-900: #1a2030;
+  --ink-700: #344054;
+  --ink-500: #5f6b7e;
+  --ink-400: #98a2b3;
+  --ink-300: #d3d9e2;
+  --ink-200: #e6e9ef;
+  --ink-100: #f1f3f7;
+  --ink-50: #f7f8fa;
+
+  /* 单一主色：靛蓝 */
+  --accent: #4353c9;
+  --accent-hover: #3543ad;
+  --accent-bright: #8b98f0;
+  --accent-soft: #eef1fc;
+  --accent-border: #cdd5f2;
+
+  /* 语义色（成功/危险） */
+  --ok: #0f8a63;
+  --ok-hover: #0c7251;
+  --ok-ink: #0a6b4d;
+  --ok-soft: #e5f5ee;
+  --bad-ink: #a03426;
+  --bad-soft: #fdecea;
+  --bad-text: #c0392b;
+
+  /* 圆角阶梯 */
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 13px;
+  --r-xl: 16px;
+
+  /* 阴影：卡片柔和双层 + 外圈光晕（Double-Bezel） */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-pop: 0 4px 14px rgba(16, 24, 40, 0.10);
+  --halo: 0 0 0 6px rgba(16, 24, 40, 0.025);
+
+  /* 动效曲线：模拟质量感 */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  background: var(--ink-100);
+  color: var(--ink-900);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font-family: inherit; }
+
+/* 细滚动条 */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #c9cfda; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #aab2c0; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 细腻噪点覆层：固定层 + 不可交互，打破数码平面感 */
+.app { position: relative; }
+.app::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 40;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  opacity: 0.028;
+}
+
+/* 键盘可达性 */
+button:focus-visible, .call-header:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px;
+}
+
+/* ==================== 动效编排：级联入场 ==================== */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 动效可达性：用户偏好减少动效时全部关闭 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

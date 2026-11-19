@@ -59,3 +59,21 @@
 <script setup>
 import { registryFunctions, CARD_TYPES } from "../store.js";
 </script>
+
+<style scoped>
+.help-page { flex-direction: column; gap: 16px; }
+.help-card {
+  border: 1px solid rgba(16, 24, 40, 0.07); border-radius: var(--r-xl, 16px); background: #fff;
+  padding: 20px 24px; box-shadow: var(--shadow-card, none), var(--halo, none);
+  animation: rise-in 0.55s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.help-card:nth-child(2) { animation-delay: 0.06s; }
+.help-card:nth-child(3) { animation-delay: 0.12s; }
+.help-card:nth-child(4) { animation-delay: 0.18s; }
+.help-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.help-table th, .help-table td { border: 1px solid var(--ink-200, #e6e9ef); padding: 8px 12px; text-align: left; }
+.help-table th { background: var(--ink-50, #f7f8fa); font-size: 12px; color: var(--ink-500, #5f6b7e); font-weight: 600; }
+.help-table .fn-name { font-weight: 600; white-space: nowrap; }
+.ul { padding-left: 18px; margin-top: 6px; }
+.ul li { margin-bottom: 4px; }
+</style>

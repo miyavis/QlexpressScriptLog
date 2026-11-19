@@ -1,0 +1,111 @@
+/* ============================================================
+ * 布局壳（侧边导航 + 内容区）与通用原语
+ * 页面专属样式见 scripts.css / executions.css / HelpPage.vue
+ * ============================================================ */
+
+/* ---------- 布局壳 ---------- */
+.app { display: flex; min-height: 100vh; background: var(--ink-100); }
+.side-nav {
+  width: 232px; flex-shrink: 0;
+  background: linear-gradient(180deg, #171a21 0%, #13161e 100%); color: #c7ccda;
+  display: flex; flex-direction: column; padding: 22px 12px 16px;
+  position: sticky; top: 0; height: 100vh; box-sizing: border-box;
+}
+.brand { display: flex; gap: 11px; align-items: center; padding: 4px 8px 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); margin-bottom: 16px; }
+.brand-icon { font-size: 19px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 7px 8px; }
+.brand-name { font-size: 14.5px; font-weight: 650; color: #f2f4f9; letter-spacing: 0.2px; }
+.brand-sub { font-size: 11px; color: #7d8496; margin-top: 3px; letter-spacing: 0.3px; }
+.nav-menu { display: flex; flex-direction: column; gap: 3px; }
+.nav-menu button {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px;
+  background: transparent; color: #9aa2b5; font-weight: 550; font-size: 13.5px; text-align: left;
+  transition: background 0.3s var(--ease), color 0.3s var(--ease), box-shadow 0.3s var(--ease), transform 0.3s var(--ease);
+}
+.nav-menu button:hover { background: rgba(255, 255, 255, 0.05); color: #e6e9f2; transform: translateX(2px); }
+.nav-menu button.active { background: rgba(139, 152, 240, 0.13); color: #fff; box-shadow: inset 2px 0 0 var(--accent-bright); }
+.nav-ico { font-size: 15px; width: 20px; text-align: center; }
+.nav-badge { margin-left: auto; font-size: 11px; background: rgba(255, 255, 255, 0.07); color: #aab1c4; border-radius: 9px; padding: 1px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nav-menu button.active .nav-badge { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.nav-foot { margin-top: auto; font-size: 10.5px; color: #565d6e; line-height: 1.8; padding: 0 8px; letter-spacing: 0.3px; }
+.app-body { flex: 1; display: flex; flex-direction: column; min-width: 0; max-width: 1500px; }
+.app-main { display: flex; gap: 18px; padding: 24px 28px 18px; flex: 1; }
+.app-footer { padding: 16px 0; font-size: 11.5px; color: var(--ink-400); text-align: center; border-top: 1px solid var(--ink-200); margin-top: auto; letter-spacing: 0.2px; }
+
+/* ---------- 通用原语 ---------- */
+.page { display: flex; gap: 16px; width: 100%; }
+.panel-left { flex: 0 0 340px; }
+.panel-right { flex: 1; min-width: 0; }
+
+h2 {
+  font-family: var(--font-display);
+  font-size: 16.5px; margin-bottom: 10px; color: var(--ink-900);
+  font-weight: 750; letter-spacing: -0.02em;
+}
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.toolbar select { margin-bottom: 0; }
+
+/* 按钮：语义色 + 安静危险；一律禁止文字换行（防止被挤成"汤圆"） */
+.btn-primary, .btn-success, .btn-secondary, .btn-delete, .mode-btn {
+  white-space: nowrap; flex: none;
+  transition: background 0.3s var(--ease), border-color 0.3s var(--ease), color 0.3s var(--ease), box-shadow 0.3s var(--ease), transform 0.18s var(--ease);
+}
+.btn-primary:active, .btn-success:active, .btn-secondary:active, .btn-delete:active, .mode-btn:active { transform: translateY(1px) scale(0.98); }
+
+.btn-primary {
+  background: var(--accent); color: #fff; padding: 8px 16px; border-radius: 9px;
+  font-weight: 600; font-size: 13.5px; box-shadow: 0 1px 2px rgba(67, 83, 201, 0.35);
+}
+.btn-primary:hover { background: var(--accent-hover); box-shadow: 0 3px 10px rgba(67, 83, 201, 0.28); }
+.btn-success {
+  background: var(--ok); color: #fff; padding: 8px 16px; border-radius: 9px;
+  font-weight: 600; font-size: 13.5px; box-shadow: 0 1px 2px rgba(15, 138, 99, 0.32);
+}
+.btn-success:hover { background: var(--ok-hover); box-shadow: 0 3px 10px rgba(15, 138, 99, 0.25); }
+.btn-delete {
+  background: #fff; color: #b42318; border: 1px solid #e8ccc6; padding: 6px 12px;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+}
+.btn-delete:hover { background: var(--bad-soft); border-color: #ddb2a8; }
+.btn-delete.sm { padding: 3px 9px; font-size: 11.5px; border-radius: 7px; flex: none; }
+.btn-secondary {
+  background: #fff; color: var(--ink-700); border: 1px solid var(--ink-300); padding: 7px 14px;
+  border-radius: 8px; font-weight: 600; font-size: 13.5px;
+}
+.btn-secondary:hover { background: var(--ink-50); border-color: #bfc6d1; }
+.btn-secondary.sm { padding: 4px 10px; font-size: 12px; }
+
+.mode-btn { padding: 5px 12px; border: 1px solid var(--ink-300); border-radius: 7px; background: #fff; cursor: pointer; font-size: 12.5px; color: var(--ink-700); }
+.mode-btn:hover { border-color: var(--accent); color: var(--accent); }
+.mode-btn.tabon { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.mode-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 输入控件 */
+input {
+  width: 100%; padding: 8px 11px; border: 1px solid var(--ink-300); border-radius: 8px;
+  font-size: 13.5px; background: #fff; color: var(--ink-900);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus, .search-input:focus, .card-input:focus, select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(67, 83, 201, 0.12);
+}
+input:readonly { background: var(--ink-100); color: var(--ink-500); }
+select {
+  padding: 7px 10px; border: 1px solid var(--ink-300); border-radius: 8px; background: #fff;
+  font-size: 13px; color: var(--ink-700); transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-input {
+  padding: 7px 11px; border: 1px solid var(--ink-300); border-radius: 8px; font-size: 13px;
+  min-width: 170px; outline: none; background: #fff; color: var(--ink-900);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-input.narrow { min-width: 110px; }
+
+/* 空状态 */
+.empty {
+  color: var(--ink-400); font-size: 13px; padding: 38px 16px; text-align: center;
+  border: 1px dashed var(--ink-300); border-radius: var(--r-xl); background: rgba(255, 255, 255, 0.55);
+}
+.empty::before { content: "🗂️"; display: block; font-size: 26px; margin-bottom: 10px; opacity: 0.65; }
+.full { width: 100%; }
+.hint { font-size: 12px; color: var(--ink-500); margin-top: 4px; }
+.count { font-size: 12px; color: var(--ink-500); }

@@ -9,6 +9,8 @@ import {
   genScriptFromCards,
   splitArgsRespectQuotes,
   parseScriptToCards,
+  collectUndefinedVars,
+  extractExprRefs,
   hashContent,
   isMetaStale,
   validateCardStructure
@@ -44,6 +46,9 @@ describe("newCard", () => {
     const a = newCard("call");
     const b = newCard("call");
     expect(a.id).not.toBe(b.id);
+  });
+  it("call 卡参数默认留空（占位提示由注册表 paramHint 动态驱动，不再硬编码 user）", () => {
+    expect(newCard("call").param).toBe("");
   });
   it("prepcall 卡片带默认字段", () => {
     const c = newCard("prepcall");
@@ -107,6 +112,14 @@ describe("genScriptFromCards（生成期行号计数）", () => {
     expect(sourceMap).toHaveLength(0);
   });
 
+  it("call 卡参数为空时如实生成空参数，不再偷偷补 user", () => {
+    const card = newCard("call");
+    card.varName = "等级";
+    card.func = "查询用户等级";
+    const { script } = genScriptFromCards([card]);
+    expect(script).toBe("等级 = 查询用户等级();");
+  });
+
   it("原样卡 raw 为空时占位（保持旧行为：不生成行，empty=true）", () => {
     const t = newCard("text");
     t.raw = "";
@@ -142,6 +155,35 @@ describe("parseScriptToCards（反解析）", () => {
     expect(cards[0]).toMatchObject({ varName: "等级", func: "查询用户等级", param: "user" });
     expect(cards[2]).toMatchObject({ title: "标题", exprRaw: '"等级=" + 等级' });
     expect(cards[3]).toMatchObject({ left: "积分", op: "大于", right: "100" });
+  });
+
+  it("识别注册表新增的非内置函数（不再回落计算卡，加载规则如实还原）", () => {
+    const cards = parseScriptToCards("风控分 = 风控核查(user);");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].type).toBe("call");
+    expect(cards[0]).toMatchObject({ varName: "风控分", func: "风控核查", param: "user" });
+  });
+
+  it("多函数组合表达式不误判为调用卡（保持计算卡保真）", () => {
+    const cards = parseScriptToCards("x = foo(a) + bar(b);");
+    expect(cards[0].type).toBe("calc");
+    expect(cards[0].expr).toBe("foo(a) + bar(b)");
+  });
+
+  it("嵌套函数调用回落计算卡（高级语法保真）", () => {
+    const cards = parseScriptToCards("x = foo(bar(y));");
+    expect(cards[0].type).toBe("calc");
+    expect(cards[0].expr).toBe("foo(bar(y))");
+  });
+
+  it("round-trip：空参数 call 卡往返无损", () => {
+    const card = newCard("call");
+    card.varName = "等级";
+    card.func = "查询用户等级";
+    card.param = "";
+    const { script } = genScriptFromCards([card]);
+    const reparsed = parseScriptToCards(script);
+    expect(reparsed[0]).toMatchObject({ type: "call", varName: "等级", func: "查询用户等级", param: "" });
   });
 
   it("复合条件（并且/或者）回落为原样卡", () => {
@@ -190,6 +232,96 @@ describe("parseScriptToCards（反解析）", () => {
     const reparsed = parseScriptToCards(script);
     const regenerated = genScriptFromCards(reparsed).script;
     expect(regenerated).toBe(script);
+  });
+});
+
+/* ---------- extractExprRefs / collectUndefinedVars（依赖前置校验） ---------- */
+describe("extractExprRefs（提取表达式引用的变量）", () => {
+  it("普通变量、点链取根（user.id → user）", () => {
+    expect(extractExprRefs("user.id")).toEqual(["user"]);
+    expect(extractExprRefs("积分 * 2 + 等级")).toEqual(["积分", "等级"]);
+  });
+  it("字符串字面量、纯数字不算引用", () => {
+    expect(extractExprRefs('"等级=" + 等级')).toEqual(["等级"]);
+    expect(extractExprRefs('"VIP"')).toEqual([]);
+    expect(extractExprRefs("2 * 3 + 0.5")).toEqual([]);
+  });
+  it("函数调用名不算引用（后面紧跟括号）", () => {
+    expect(extractExprRefs("查询用户等级(user)")).toEqual(["user"]);
+    expect(extractExprRefs("user.name.length() > 3")).toEqual(["user"]);
+  });
+  it("脚本关键字不算引用；裸写未加引号的词视为变量引用", () => {
+    expect(extractExprRefs("等级 等于 VIP 并且 积分 大于 100")).toEqual(["等级", "VIP", "积分"]);
+  });
+});
+
+describe("collectUndefinedVars（依赖缺失前置校验）", () => {
+  it("参数引用未定义变量 → 报问题", () => {
+    const card = newCard("call");
+    card.varName = "等级";
+    card.func = "查询用户等级";
+    card.param = "userName";
+    const issues = collectUndefinedVars([card], ["user"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].cardId).toBe(card.id);
+    expect(issues[0].message).toContain("userName");
+  });
+
+  it("参数来自脚本入参或前面卡片的产出 → 不报", () => {
+    const first = newCard("call");
+    first.varName = "等级";
+    first.func = "查询用户等级";
+    first.param = "user";
+    const second = newCard("calc");
+    second.varName = "打折积分";
+    second.expr = "等级 * 2";
+    expect(collectUndefinedVars([first, second], ["user"])).toEqual([]);
+  });
+
+  it("顺序敏感：后面的卡片产出不能给前面的卡用", () => {
+    const early = newCard("calc");
+    early.varName = "a";
+    early.expr = "later + 1";
+    const later = newCard("calc");
+    later.varName = "later";
+    later.expr = "2";
+    const issues = collectUndefinedVars([early, later], []);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].cardId).toBe(early.id);
+  });
+
+  it("带参取数卡：prepExpr 校验，prepName/varName 为后续卡提供定义", () => {
+    const prep = newCard("prepcall");
+    prep.varName = "折扣";
+    prep.prepName = "折扣依据";
+    prep.prepExpr = "user";
+    const after = newCard("calc");
+    after.varName = "x";
+    after.expr = "折扣依据 + 折扣";
+    expect(collectUndefinedVars([prep, after], ["user"])).toEqual([]);
+  });
+
+  it("如果/返回/日志卡的表达式也校验；字符串内不误报", () => {
+    const cond = newCard("if");
+    cond.left = "等级";
+    cond.op = "大于";
+    cond.right = "100";
+    const log = newCard("log");
+    log.title = "标题";
+    log.exprRaw = '"等级=" + 缺失变量';
+    const ret = newCard("return");
+    ret.expr = "积分";
+    const issues = collectUndefinedVars([cond, log, ret], ["等级", "积分"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].cardId).toBe(log.id);
+    expect(issues[0].message).toContain("缺失变量");
+  });
+
+  it("原样卡（高级语法）不校验；空输入安全", () => {
+    const t = newCard("text");
+    t.raw = "随便写什么都不报";
+    expect(collectUndefinedVars([t], [])).toEqual([]);
+    expect(collectUndefinedVars(null, null)).toEqual([]);
   });
 });
 

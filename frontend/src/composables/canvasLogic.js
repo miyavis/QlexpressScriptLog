@@ -15,7 +15,7 @@ let cardSeq = 0;
 export const newCard = (type) => {
   cardSeq += 1;
   const card = { id: `card_${Date.now().toString(36)}_${cardSeq}`, type };
-  if (type === "call") Object.assign(card, { varName: "", func: CARD_FUNCS[0], param: "user" });
+  if (type === "call") Object.assign(card, { varName: "", func: CARD_FUNCS[0], param: "" });
   // 带参取数卡：一张卡生成两行——参数定义行 + 服务调用行
   if (type === "prepcall") Object.assign(card, { varName: "", func: CARD_FUNCS[0], prepName: "", prepExpr: "" });
   if (type === "calc" || type === "return") card.expr = "";
@@ -44,7 +44,7 @@ export const genScriptFromCards = (cards) => {
     const start = lines.length + 1;
     const texts = []; // 本卡片生成的所有行
     if (c.type === "call") {
-      texts.push(`${sanitizeField(c.varName || "值")} = ${c.func}(${sanitizeField(c.param || "user")});`);
+      texts.push(`${sanitizeField(c.varName || "值")} = ${c.func}(${sanitizeField(c.param)});`);
     } else if (c.type === "prepcall") {
       // 带参取数：参数定义行 + 服务调用行（参数名在两行间共享）
       const pname = sanitizeField(c.prepName || "参数");
@@ -154,16 +154,16 @@ export const parseScriptToCards = (content) => {
       cards.push(card);
       continue;
     }
-    if ((m = line.match(/^([^=]+?)\s*=\s*(.+?)\(\s*(.*?)\s*\);$/))) {
-      const func = m[2].trim();
-      if (CARD_FUNCS.includes(func)) {
-        const card = newCard("call");
-        card.varName = m[1].trim();
-        card.func = func;
-        card.param = m[3].trim();
-        cards.push(card);
-        continue;
-      }
+    // 调用卡：`变量 = 纯函数名(参数);` 一律识别（不再限制白名单——后端注册表
+    // 新增的函数加载规则时也能如实还原）。函数名限纯名称（不含空格/括号/引号/
+    // 等号），参数层不允许嵌套括号——组合/嵌套调用是高级语法，交给计算卡保真。
+    if ((m = line.match(/^([^=]+?)\s*=\s*([^\s()=;'"，]+?)\s*\(([^()]*)\);$/))) {
+      const card = newCard("call");
+      card.varName = m[1].trim();
+      card.func = m[2].trim();
+      card.param = m[3].trim();
+      cards.push(card);
+      continue;
     }
     if ((m = line.match(/^([^=]+?)\s*=\s*(.+);$/))) {
       const card = newCard("calc");
@@ -196,6 +196,90 @@ export const parseScriptToCards = (content) => {
     }
   }
   return merged;
+};
+
+/* 脚本关键字：这些词是语法成分（运算符/语句字），永远不算变量引用 */
+const EXPR_KEYWORDS = new Set([
+  "如果", "否则", "则", "那么", "返回", "并且", "或者",
+  "等于", "不等于", "大于", "小于", "大于等于", "小于等于",
+  "true", "false", "null", "undefined", "new"
+]);
+
+/**
+ * 提取表达式引用的变量（依赖校验的基础）：
+ * - 字符串字面量（英文双/单引号）剔除；纯数字天然不匹配
+ * - 点链取根：user.id → user（成员访问的合法性交给执行层）
+ * - 函数调用名（后面紧跟括号）不算引用
+ * - 脚本关键字不算引用
+ */
+export const extractExprRefs = (expr) => {
+  const src = String(expr == null ? "" : expr)
+    .replace(/"[^"]*"|“[^”]*”|'[^']*'/g, " ");
+  const out = [];
+  const re = /[\u4e00-\u9fa5A-Za-z_][\w\u4e00-\u9fa5]*(?:\.[\w\u4e00-\u9fa5]+)*/g;
+  for (const m of src.matchAll(re)) {
+    let j = m.index + m[0].length;
+    while (j < src.length && /\s/.test(src[j])) j += 1;
+    const full = m[0];
+    const base = full.includes(".") ? full.slice(0, full.indexOf(".")) : full;
+    if (src[j] === "(") {
+      // 函数/方法调用：无点链（中文函数名）不算引用；有点链时根对象仍是被引用的
+      if (!full.includes(".")) continue;
+    }
+    if (EXPR_KEYWORDS.has(base) || out.includes(base)) continue;
+    out.push(base);
+  }
+  return out;
+};
+
+/**
+ * 依赖缺失前置校验：扫描各卡引用的变量，凡是「前面卡片没产出、也不在脚本入参里」的
+ * 直接标红（执行前就给出人看得懂的原因）。返回 [{ cardId, message }]。
+ * 原样卡（高级语法）不校验，交给执行层。
+ */
+export const collectUndefinedVars = (cards, paramKeys) => {
+  const issues = [];
+  const defined = new Set(
+    (Array.isArray(paramKeys) ? paramKeys : []).map((k) => String(k || "").trim()).filter(Boolean)
+  );
+  const EXPR_FIELDS = {
+    call: ["param"],
+    prepcall: ["prepExpr"],
+    calc: ["expr"],
+    if: ["left", "right"],
+    return: ["expr"],
+    log: ["exprRaw", "expr"]
+  };
+  for (const c of Array.isArray(cards) ? cards : []) {
+    if (!c) continue;
+    const missing = [];
+    for (const f of EXPR_FIELDS[c.type] || []) {
+      const v = c[f];
+      if (v == null || String(v).trim() === "") continue;
+      for (const ref of extractExprRefs(v)) {
+        if (!defined.has(ref) && !missing.includes(ref)) {
+          missing.push(ref);
+        }
+      }
+    }
+    if (missing.length) {
+      issues.push({
+        cardId: c.id,
+        message: `变量「${missing.join("、")}」未定义：请先拖入产出它的卡片，或在默认参数里补充`
+      });
+    }
+    // 本卡产出，供后续卡引用（带参卡两行各定义一个变量）
+    if (c.type === "prepcall") {
+      for (const v of [c.prepName, c.varName]) {
+        const s = String(v || "").trim();
+        if (s) defined.add(s);
+      }
+    } else if (c.type === "call" || c.type === "calc") {
+      const s = String(c.varName || "").trim();
+      if (s) defined.add(s);
+    }
+  }
+  return issues;
 };
 
 /** 内容 hash（FNV-1a 32 位，稳定、不依赖运行环境），用于 meta 过期校验 */

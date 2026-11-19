@@ -6,6 +6,8 @@ import {
   normalizeFunctions,
   suggestVarName,
   collectKnownVariables,
+  nextParamOnFuncChange,
+  mergeFuncOptions,
   BUILTIN_FUNCTIONS
 } from "../src/composables/functionRegistry.js";
 
@@ -69,6 +71,54 @@ describe("collectKnownVariables（表达式输入的变量补全）", () => {
   it("空输入安全", () => {
     expect(collectKnownVariables([], [])).toEqual([]);
     expect(collectKnownVariables(null, null)).toEqual([]);
+  });
+});
+
+describe("nextParamOnFuncChange（切换函数时的参数迁移）", () => {
+  const hints = ["user", "userId", "orderNo"];
+
+  it("参数为空 → 填入新函数的 paramHint", () => {
+    expect(nextParamOnFuncChange("", "userId", hints)).toBe("userId");
+  });
+
+  it("参数仍是某函数的默认提示值 → 跟随切换为新 hint", () => {
+    expect(nextParamOnFuncChange("user", "orderNo", hints)).toBe("orderNo");
+  });
+
+  it("参数是用户自选变量（不在提示集中）→ 保留不动", () => {
+    expect(nextParamOnFuncChange("会员等级", "orderNo", hints)).toBe("会员等级");
+  });
+
+  it("新函数无 hint → 空参保持空串、旧默认值原样保留", () => {
+    expect(nextParamOnFuncChange("", "", hints)).toBe("");
+    expect(nextParamOnFuncChange("user", "", hints)).toBe("user");
+  });
+
+  it("空输入安全", () => {
+    expect(nextParamOnFuncChange(null, null, null)).toBe("");
+  });
+});
+
+describe("mergeFuncOptions（函数下拉选项合并）", () => {
+  const registry = [
+    { name: "查询用户等级", service: "UserService", method: "queryLevel", paramHint: "user" },
+    { name: "计算折扣", service: "DiscountService", method: "calcDiscount", paramHint: "user" }
+  ];
+
+  it("注册表函数在前，去重", () => {
+    const out = mergeFuncOptions(registry, ["查询用户等级"]);
+    expect(out.map((f) => f.name)).toEqual(["查询用户等级", "计算折扣"]);
+  });
+
+  it("脚本里用到但注册表没有的函数 → 追加为占位项（保证 select 能如实显示）", () => {
+    const out = mergeFuncOptions(registry, ["风控核查"]);
+    expect(out.map((f) => f.name)).toEqual(["查询用户等级", "计算折扣", "风控核查"]);
+    expect(out[2]).toMatchObject({ name: "风控核查", service: "", method: "", paramHint: "" });
+  });
+
+  it("空值/非法输入安全", () => {
+    expect(mergeFuncOptions(null, null)).toEqual([]);
+    expect(mergeFuncOptions(registry, ["", null, "查询用户等级"])).toEqual(registry);
   });
 });
 

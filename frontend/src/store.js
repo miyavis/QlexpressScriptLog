@@ -4,6 +4,7 @@ import {
   newCard,
   genScriptFromCards,
   parseScriptToCards,
+  collectUndefinedVars,
   hashContent,
   isMetaStale,
   validateCardStructure
@@ -12,6 +13,8 @@ import {
   normalizeFunctions,
   suggestVarName,
   collectKnownVariables,
+  nextParamOnFuncChange,
+  mergeFuncOptions,
   BUILTIN_FUNCTIONS
 } from "./composables/functionRegistry.js";
 import { buildExecutionExport } from "./composables/exportRecord.js";
@@ -444,6 +447,14 @@ const addCard = (type) => {
   if ((card.type === "call" || card.type === "prepcall") && !card.varName) {
     card.varName = suggestVarName(card.func);
   }
+  // 依赖自动化：参数自动带上当前可用的第一个变量（脚本入参优先），没有候选才留空
+  const candidate = knownVariables.value[0] || "";
+  if (card.type === "call" && !card.param) {
+    card.param = candidate;
+  }
+  if (card.type === "prepcall" && !card.prepExpr) {
+    card.prepExpr = candidate;
+  }
   canvasCards.value.push(card);
   focusCardFirstInput(card.id);
 };
@@ -545,12 +556,22 @@ const cardOfLineId = (lineNo) => {
   const m = genCanvas.value.sourceMap.find((x) => !x.empty && lineNo >= x.startLine && lineNo <= x.endLine);
   return m ? m.cardId : null;
 };
-/** if/else/end 配对校验：问题卡片在画布上标红（在执行报错前给出人看得懂的原因） */
+/** if/else/end 配对 + 依赖缺失两类校验：问题卡片在画布上标红（在执行报错前给出人看得懂的原因） */
+const scriptParamKeys = computed(() => {
+  try {
+    return Object.keys(JSON.parse(form.defaultParamsJson || "{}"));
+  } catch (e) {
+    return [];
+  }
+});
 const structureIssues = computed(() => validateCardStructure(canvasCards.value));
+const undefinedVarIssues = computed(() =>
+  collectUndefinedVars(canvasCards.value, scriptParamKeys.value)
+);
 const issueMap = computed(() => {
   const m = {};
-  for (const it of structureIssues.value) {
-    m[it.cardId] = it.message;
+  for (const it of [...structureIssues.value, ...undefinedVarIssues.value]) {
+    if (!m[it.cardId]) m[it.cardId] = it.message;
   }
   return m;
 });
@@ -1017,23 +1038,30 @@ const funcParamHint = (name) => {
   return f ? f.paramHint : "";
 };
 
-/** 换函数时自动推荐结果变量名（只在变量名为空时接管，不覆盖用户输入） */
+/** 换函数时自动推荐结果变量名（只在变量名为空时接管），并把参数跟随切换：
+ *  空参或仍是某函数默认提示值 → 换成新函数的 paramHint；用户自选变量不动 */
 const onFuncChange = (card) => {
   if (!card.varName && card.func) {
     card.varName = suggestVarName(card.func);
   }
+  if (card.type === "call") {
+    const hints = registryFunctions.value.map((f) => f.paramHint).filter(Boolean);
+    card.param = nextParamOnFuncChange(card.param, funcParamHint(card.func), hints);
+  }
 };
 
+/** 函数下拉选项：注册表 + 画布上已使用的函数（保证 select 加载规则后如实显示） */
+const funcOptions = computed(() =>
+  mergeFuncOptions(
+    registryFunctions.value,
+    canvasCards.value.filter((c) => c.type === "call" || c.type === "prepcall").map((c) => c.func)
+  )
+);
+
 /** 表达式/值输入的变量补全候选：入参键 + 画布上已定义的变量 */
-const knownVariables = computed(() => {
-  let paramKeys = [];
-  try {
-    paramKeys = Object.keys(JSON.parse(form.defaultParamsJson || "{}"));
-  } catch (e) {
-    paramKeys = [];
-  }
-  return collectKnownVariables(canvasCards.value, paramKeys);
-});
+const knownVariables = computed(() =>
+  collectKnownVariables(canvasCards.value, scriptParamKeys.value)
+);
 
 /** 复制卡片（含内容），插到当前卡片之后 */
 const duplicateCard = (idx) => {
@@ -1168,6 +1196,7 @@ export {
   toggleCall,
   registryFunctions,
   loadFunctionRegistry,
+  funcOptions,
   funcParamHint,
   onFuncChange,
   knownVariables,

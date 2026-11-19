@@ -163,9 +163,6 @@
                       <div class="palette-tip">服务函数 {{ registryFunctions.length }} 个（来自后端注册表，新增 Service 注册一次即自动出现）</div>
                     </div>
                     <div class="canvas" @dragover.prevent>
-                      <datalist id="fn-options">
-                        <option v-for="f in registryFunctions" :key="f.name" :value="f.name">{{ f.service }}.{{ f.method }}</option>
-                      </datalist>
                       <datalist id="known-vars">
                         <option v-for="v in knownVariables" :key="v" :value="v"></option>
                       </datalist>
@@ -196,13 +193,23 @@
                         <div class="card-fields">
                           <template v-if="c.type === 'call'">
                             <label>变量<input v-model="c.varName" class="card-input" placeholder="等级" list="known-vars" /></label>
-                            <label>函数<input v-model="c.func" class="card-input" list="fn-options" placeholder="查询用户等级" @change="onFuncChange(c)" /></label>
-                            <label>参数<input v-model="c.param" class="card-input" :placeholder="funcParamHint(c.func) || 'user'" list="known-vars" /></label>
+                            <label>函数
+                              <select v-model="c.func" class="card-input" @change="onFuncChange(c)">
+                                <option v-if="!c.func" value="">请选择函数</option>
+                                <option v-for="f in funcOptions" :key="f.name" :value="f.name">{{ f.name }}</option>
+                              </select>
+                            </label>
+                            <label>参数<input v-model="c.param" class="card-input" :placeholder="funcParamHint(c.func) || '参数名'" list="known-vars" /></label>
                           </template>
                           <template v-else-if="c.type === 'prepcall'">
                             <label>参数名<input v-model="c.prepName" class="card-input" placeholder="查询用户" /></label>
                             <label>参数值<input v-model="c.prepExpr" class="card-input wide" placeholder="user 或 表达式" list="known-vars" /></label>
-                            <label>函数<input v-model="c.func" class="card-input" list="fn-options" placeholder="查询用户积分" @change="onFuncChange(c)" /></label>
+                            <label>函数
+                              <select v-model="c.func" class="card-input" @change="onFuncChange(c)">
+                                <option v-if="!c.func" value="">请选择函数</option>
+                                <option v-for="f in funcOptions" :key="f.name" :value="f.name">{{ f.name }}</option>
+                              </select>
+                            </label>
                             <label>结果存入<input v-model="c.varName" class="card-input" placeholder="积分" /></label>
                             <span class="card-none">此卡片生成两行：参数定义行 + 服务调用行</span>
                           </template>
@@ -527,6 +534,7 @@ import {
   toggleCall,
   registryFunctions,
   loadFunctionRegistry,
+  funcOptions,
   funcParamHint,
   onFuncChange,
   knownVariables,
