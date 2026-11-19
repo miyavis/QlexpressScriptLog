@@ -3,6 +3,7 @@ package com.example.rulelog.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -32,8 +33,13 @@ public class SecurityConfig {
         }
         http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+                        // 审计与所有写操作（增删改/执行/评审/发布）仅管理员
                         .requestMatchers("/api/audit").hasRole("ADMIN")
-                        .requestMatchers("/api/**").hasAnyRole("ADMIN", "VIEWER")
+                        .requestMatchers(HttpMethod.POST, "/api/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole("ADMIN")
+                        // 读操作（GET）管理员与只读用户均可
+                        .requestMatchers(HttpMethod.GET, "/api/**").hasAnyRole("ADMIN", "VIEWER")
                         .anyRequest().permitAll())
                 .httpBasic(basic -> { });
         return http.build();
