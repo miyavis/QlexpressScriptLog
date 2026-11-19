@@ -724,19 +724,24 @@ const loadExecutions = async () => {
   }
 };
 
-/** 加载指定脚本的执行日志（供脚本页右侧一一对应展示） */
+/** 加载指定脚本的执行日志（供脚本页右侧一一对应展示）；带竞态保护，旧请求结果不会覆盖新脚本 */
+let scriptLogRequestSeq = 0;
 const loadScriptExecutions = async (scriptId) => {
   if (!scriptId) return;
+  const seq = ++scriptLogRequestSeq;
   try {
-    scriptExecutions.value = await requestJson(
+    const list = await requestJson(
       `${API}/executions/script/${encodeURIComponent(scriptId)}?limit=50`, {}, fetch, getApiToken());
+    // 竞态：期间用户切到别的脚本（或又发了新请求），丢弃这次旧结果
+    if (seq !== scriptLogRequestSeq || form.id !== scriptId) return;
+    scriptExecutions.value = list;
     // 如果之前选中的日志不在新列表中，清空选中
     if (selectedLogTraceId.value && !scriptExecutions.value.some(r => r.traceId === selectedLogTraceId.value)) {
       selectedLogTraceId.value = null;
       selectedLogRecord.value = null;
     }
   } catch (e) {
-    console.warn("加载脚本执行日志失败：" + e);
+    console.warn("加载脚本执行日志失败：" + e.message);
   }
 };
 

@@ -69,4 +69,24 @@ class OtelTraceServiceTest {
         assertFalse(otel.isEnabled());
         otel.shutdown();
     }
+
+    @Test
+    void spanUsesRecordedCallTimes() {
+        CollectingExporter exporter = new CollectingExporter();
+        OtelTraceService otel = new OtelTraceService("", exporter);
+        Context ctx = otel.startExecution("A1B2C3D4E5F60718", "script_1");
+
+        ServiceCallLog call = new ServiceCallLog("t", "UserService", "查询用户等级", "queryLevel", "[]", 1000L);
+        call.setSuccess(true);
+        call.setEndTime(1500L);
+        otel.recordCall(ctx, call);
+        otel.endExecution(ctx, true, null);
+
+        SpanData callSpan = exporter.spans.stream()
+                .filter(s -> s.getName().equals("查询用户等级")).findFirst().get();
+        // span 起止应反映记录的 1000ms / 1500ms（epoch 毫秒 → 纳秒）
+        assertEquals(1_000_000_000L, callSpan.getStartEpochNanos());
+        assertEquals(1_500_000_000L, callSpan.getEndEpochNanos());
+        otel.shutdown();
+    }
 }

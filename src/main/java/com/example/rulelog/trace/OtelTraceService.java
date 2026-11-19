@@ -3,7 +3,6 @@ package com.example.rulelog.trace;
 import com.example.rulelog.model.RuleExecutionRecord;
 import com.example.rulelog.model.ServiceCallLog;
 import com.example.rulelog.model.StepLog;
-import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -112,16 +111,20 @@ public class OtelTraceService {
         idGenerator.clear();
     }
 
-    /** 记录一个服务调用为 child span（递归处理子调用） */
+    /** 记录一个服务调用为 child span（递归处理子调用），span 起止用 ServiceCallLog 记录的真实时间 */
     public void recordCall(Context parentContext, ServiceCallLog call) {
         if (call == null) return;
-        Span span = tracer.spanBuilder(call.getDisplayName())
+        io.opentelemetry.api.trace.SpanBuilder builder = tracer.spanBuilder(call.getDisplayName())
                 .setParent(parentContext)
                 .setAttribute("service.name", call.getServiceName() == null ? "" : call.getServiceName())
                 .setAttribute("service.method", call.getMethodName() == null ? "" : call.getMethodName())
                 .setAttribute("service.durationMs", call.getDurationMs())
-                .setAttribute("service.success", call.isSuccess())
-                .startSpan();
+                .setAttribute("service.success", call.isSuccess());
+        // 用采集到的真实时间还原 span 时间线（毫秒 → 纳秒）
+        if (call.getStartTime() > 0) {
+            builder.setStartTimestamp(call.getStartTime(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+        Span span = builder.startSpan();
         if (!call.isSuccess() && call.getErrorMessage() != null) {
             span.setStatus(StatusCode.ERROR, call.getErrorMessage());
         }
@@ -131,15 +134,25 @@ public class OtelTraceService {
                 recordCall(childCtx, child);
             }
         }
-        // 用记录的 startTime/endTime 还原 span 时间（OTel 用纳秒）
-        span.end();
+        if (call.getEndTime() > 0) {
+            span.end(call.getEndTime(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        } else {
+            span.end();
+        }
     }
 
-    /** 把根步骤脚本打印记录为 root span 上的 event */
+    /** 把根步骤脚本打印记录为 root span 上的 event（用 StepLog 的真实 timestamp） */
     public void recordStep(Context rootContext, StepLog step) {
         if (step == null) return;
-        Span.fromContext(rootContext).addEvent(step.getStepName() == null ? "step" : step.getStepName(),
-                Attributes.builder().put("step.detail", step.getDetail() == null ? "" : step.getDetail()).build());
+        io.opentelemetry.api.common.Attributes attrs = io.opentelemetry.api.common.Attributes.builder()
+                .put("step.detail", step.getDetail() == null ? "" : step.getDetail()).build();
+        Span root = Span.fromContext(rootContext);
+        if (step.getTimestamp() > 0) {
+            root.addEvent(step.getStepName() == null ? "step" : step.getStepName(), attrs,
+                    java.time.Instant.ofEpochMilli(step.getTimestamp()));
+        } else {
+            root.addEvent(step.getStepName() == null ? "step" : step.getStepName(), attrs);
+        }
     }
 
     /** 把整条执行记录导出到 OTel（便于批量补录/测试） */
