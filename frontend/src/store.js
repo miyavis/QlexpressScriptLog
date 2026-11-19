@@ -23,6 +23,7 @@ import { buildVersionList, restoreVersion } from "./composables/versionHistory.j
 import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
+import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc } from "./composables/logPresentation.js";
 
 const API = "/api";
 
@@ -135,11 +136,6 @@ const execSummary = computed(() => {
   };
 });
 
-const truncate = (s, maxLen) => {
-  if (!s) return "";
-  return s.length > maxLen ? s.substring(0, maxLen) + "…" : s;
-};
-
 const formatExprValue = (v) => {
   if (v == null) return "";
   if (typeof v === "string") return v;
@@ -147,18 +143,6 @@ const formatExprValue = (v) => {
 };
 
 /* ---------- 业务友好的行级日志辅助函数 ---------- */
-
-/** 标量显示：字符串/数字直接显示，其他 JSON 化 */
-const fmtScalar = (v) => {
-  if (v == null) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  try {
-    return JSON.stringify(v);
-  } catch (e) {
-    return String(v);
-  }
-};
 
 /** 脚本入参（显示在日志顶部一次） */
 const inputParams = computed(() => {
@@ -171,40 +155,9 @@ const inputParams = computed(() => {
  * 解析脚本的 如果/否则 结构：返回 行号 → 分支('then'|'else') 映射、如果所在行
  * 用于给每行盖上“则分支/否则分支”标签，并说明未执行的分支原因
  */
-const branchInfo = computed(() => {
-  const info = { map: {}, ifLine: null };
-  if (!selectedLogRecord.value || !selectedLogRecord.value.scriptSnapshot) return info;
-  const lines = selectedLogRecord.value.scriptSnapshot.split("\n");
-  let stage = "none"; // none → then → else → none
-  let depth = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const text = lines[i];
-    const opens = (text.match(/\{/g) || []).length;
-    const closes = (text.match(/\}/g) || []).length;
-    if (stage === "none" && text.includes("如果")) {
-      info.ifLine = i + 1;
-      stage = "then";
-      depth = opens - closes;
-      continue;
-    }
-    if (stage === "then") {
-      if (text.includes("否则")) {
-        stage = "else";
-      } else {
-        info.map[i + 1] = "then";
-      }
-      depth += opens - closes;
-      if (depth <= 0) stage = "none";
-      continue;
-    }
-    if (stage === "else") {
-      info.map[i + 1] = "else";
-      depth += opens - closes;
-      if (depth <= 0) stage = "none";
-    }
-  }
-  return info;
-});
+const branchInfo = computed(() =>
+  parseBranchInfo(selectedLogRecord.value ? selectedLogRecord.value.scriptSnapshot : null)
+);
 
 const lineBranch = (le) => branchInfo.value.map[le.lineNo] || null;
 
@@ -252,87 +205,11 @@ const notTakenText = (le) => {
   return null;
 };
 
-const OP_SYMBOLS = { "*": "×", "/": "÷", "=": "=", "+": "+", "-": "-" };
+/** 行级日志业务描述函数已从 composables/logPresentation.js 抽取，这里保留别名以兼容既有导出名 */
+const lineAssigns = buildLineAssigns;
+const leReturn = buildReturnDesc;
+// callArgs / callResult / rawExprDesc / fmtScalar / truncate 直接从 logPresentation 导入使用
 
-/** 变量赋值描述：从表达式轨迹还原 “积分 = 380（来源：…）” */
-const lineAssigns = (le) => {
-  const exprs = (le.expressions || []).filter(e => e && e.evaluated);
-  const eq = exprs.find(e => e.type === "OPERATOR" && e.token === "=");
-  if (!eq) return [];
-  const assigned = exprs.find(e => e.type === "VARIABLE" && e.value == null);
-  const parts = [];
-  for (const e of exprs) {
-    if (e === eq) continue;
-    if (assigned && e === assigned) continue;
-    if (e.type === "OPERATOR") {
-      parts.push(OP_SYMBOLS[e.token] || e.token);
-    } else if (e.type === "VARIABLE") {
-      parts.push(e.value != null ? `${e.token}(${fmtScalar(e.value)})` : e.token);
-    } else if (e.type === "FUNCTION" || e.type === "METHOD") {
-      parts.push(`调用「${e.token}」`);
-    } else if (e.type === "VALUE") {
-      parts.push(fmtScalar(e.value));
-    }
-    // IF/RETURN/BLOCK 等结构节点不参与
-  }
-  // 去除连续重复
-  const dedup = [];
-  for (const p of parts) {
-    if (!dedup.length || dedup[dedup.length - 1] !== p) dedup.push(p);
-  }
-  // 运算符开头（轨迹父节点先出现）→ 还原成 中缀形式：a × b
-  let src = "";
-  if (dedup.length && dedup[0].length <= 1) {
-    const op = dedup[0];
-    const operands = dedup.slice(1);
-    src = operands.length >= 2 ? operands.join(` ${op} `) : operands.join(" ");
-  } else {
-    src = dedup.join(" · ");
-  }
-  const name = assigned ? assigned.token : "结果";
-  return [`${name} = ${fmtScalar(eq.value)}${src ? `（${src}）` : ""}`];
-};
-
-/** 返回行描述： RETURN 表达式 → “返回结果：打折积分 → 760” */
-const leReturn = (le) => {
-  const ret = (le.expressions || []).find(e => e && e.type === "RETURN" && e.evaluated && e.value != null);
-  if (!ret) return null;
-  const v = (le.expressions || []).find(e => e && e.type === "VARIABLE" && e.value != null && e.token);
-  return `返回结果：${v ? v.token + " → " : ""}${fmtScalar(ret.value)}`;
-};
-
-/** 服务调用参数格式化：argsJson '[\"张三\"]' → '张三' */
-const callArgs = (call) => {
-  try {
-    const arr = JSON.parse(call.argsJson || "[]");
-    return Array.isArray(arr) ? arr.map(fmtScalar).join(", ") : String(call.argsJson || "");
-  } catch (e) {
-    return String(call.argsJson || "");
-  }
-};
-
-/** 服务调用结果格式化：去掉 JSON 引号 */
-const callResult = (call) => {
-  if (call.resultJson == null) return "";
-  try {
-    return fmtScalar(JSON.parse(call.resultJson));
-  } catch (e) {
-    return call.resultJson;
-  }
-};
-
-/** 原始轨迹的单条描述（折叠区内使用） */
-const rawExprDesc = (e) => {
-  if (!e) return "";
-  const labels = {
-    IF: "如果", RETURN: "返回", VARIABLE: "变量", OPERATOR: "运算", VALUE: "值",
-    FUNCTION: "函数", METHOD: "函数", BLOCK: "代码块"
-  };
-  let s = `${labels[e.type] || e.type}${e.token ? `【${e.token}】` : ""}`;
-  if (e.evaluated && e.value != null) s += ` = ${fmtScalar(e.value)}`;
-  if (!e.evaluated) s += "（未执行）";
-  return s;
-};
 
 /* ---------- 脚本行级日志状态 ---------- */
 const hoverLineNo = ref(null);
@@ -1116,7 +993,6 @@ export {
   condText,
   condVerdict,
   notTakenText,
-  OP_SYMBOLS,
   lineAssigns,
   leReturn,
   callArgs,

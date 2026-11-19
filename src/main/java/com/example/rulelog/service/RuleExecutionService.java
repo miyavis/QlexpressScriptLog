@@ -17,6 +17,7 @@ import com.example.rulelog.trace.StepLogger;
 import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.store.ScriptStore;
 import com.example.rulelog.util.ErrorSummarizer;
+import com.example.rulelog.util.LineMatcher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -126,113 +127,95 @@ public class RuleExecutionService {
      */
     private void groupLogsByLine(RuleExecutionRecord record, QLResult qlResult, String scriptContent) {
         String[] lines = scriptContent == null ? new String[0] : scriptContent.split("\n", -1);
+        initLineExecutions(record, lines);
+        LineMatcher matcher = new LineMatcher(lines); // 同名函数按出现顺序依次消费行号
+        groupCalls(record, lines, matcher);
+        groupRootSteps(record, lines);
+        collectTraces(record, qlResult, lines);
+        recomputeActivity(record);
+    }
 
-        // 收集所有已注册的中文函数名
+    /** 初始化行级记录：含中文函数名的行，兜底为所有非空行 */
+    private void initLineExecutions(RuleExecutionRecord record, String[] lines) {
         Set<String> chineseNames = aliasRegistry.getAllChineseNames();
-
-        // 同名函数按出现顺序依次分配行号（避免多次调用全堆到第一行）
-        com.example.rulelog.util.LineMatcher matcher =
-                new com.example.rulelog.util.LineMatcher(lines);
-
-        // 初始化所有包含中文函数名的行
         for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
             for (String name : chineseNames) {
-                if (line.contains(name)) {
-                    String content = line.trim();
-                    if (content.isEmpty()) {
-                        content = line;
-                    }
-                    record.getLineExecutions().putIfAbsent(i + 1,
-                            new LineExecution(i + 1, content));
+                if (lines[i].contains(name)) {
+                    putLine(record, i + 1, lines);
                     break;
                 }
             }
         }
-
-        // 若没有发现任何活跃行，兜底使用所有非空行
         if (record.getLineExecutions().isEmpty()) {
             for (int i = 0; i < lines.length; i++) {
-                String content = lines[i].trim();
-                if (!content.isEmpty()) {
-                    record.getLineExecutions().putIfAbsent(i + 1,
-                            new LineExecution(i + 1, content));
+                if (!lines[i].trim().isEmpty()) {
+                    putLine(record, i + 1, lines);
                 }
             }
         }
+    }
 
-        // 将 ServiceCallLog 按 startTime 排序，保证时间顺序正确
+    /** 确保行号有对应 LineExecution（存在则跳过） */
+    private void putLine(RuleExecutionRecord record, int lineNo, String[] lines) {
+        if (record.getLineExecutions().containsKey(lineNo)) return;
+        String content = (lineNo >= 1 && lineNo <= lines.length) ? lines[lineNo - 1].trim() : "";
+        record.getLineExecutions().put(lineNo,
+                new LineExecution(lineNo, content.isEmpty() && lineNo >= 1 && lineNo <= lines.length
+                        ? lines[lineNo - 1] : content));
+    }
+
+    /** 把服务调用（含子调用）按中文函数名归到各自行 */
+    private void groupCalls(RuleExecutionRecord record, String[] lines, LineMatcher matcher) {
         List<ServiceCallLog> calls = record.getCalls();
-        if (calls != null) {
-            calls.sort((a, b) -> Long.compare(a.getStartTime(), b.getStartTime()));
+        if (calls == null) return;
+        calls.sort((a, b) -> Long.compare(a.getStartTime(), b.getStartTime()));
+        for (ServiceCallLog call : calls) {
+            Integer targetLine = matcher.next(call.getChineseName());
+            if (targetLine == null) targetLine = lines.length;
+            call.setLineNo(targetLine);
+            putLine(record, targetLine, lines);
+            record.getLineExecutions().get(targetLine).addCall(call);
         }
-
-        // 将每个调用分配到脚本中包含其中文名的行号（同名按出现顺序依次消费）
-        if (calls != null) {
-            for (ServiceCallLog call : calls) {
-                Integer targetLine = matcher.next(call.getChineseName());
-                if (targetLine == null) {
-                    // 找不到匹配行，放到最后一行
-                    targetLine = lines.length;
-                }
-                call.setLineNo(targetLine);
-                LineExecution le = record.getLineExecutions().get(targetLine);
-                if (le == null) {
-                    String content = (targetLine >= 1 && targetLine <= lines.length)
-                            ? lines[targetLine - 1] : "";
-                    le = new LineExecution(targetLine, content);
-                    record.getLineExecutions().put(targetLine, le);
-                }
-                le.addCall(call);
-            }
+        // 顶层全部归行后，再递归处理子调用（保持与原实现一致的顺序）
+        for (ServiceCallLog call : calls) {
+            groupChildrenByLine(record, call, lines, matcher);
         }
+    }
 
-        // 递归处理子调用，分配到父调用所在行
-        if (calls != null) {
-            for (ServiceCallLog call : calls) {
-                groupChildrenByLine(record, call, lines, matcher);
-            }
-        }
-
-        // 根层级步骤（脚本打印）：按 stepName 匹配所在行
-        // 记录日志("积分查询完成", ...) 的行包含 "积分查询完成"，据此归到正确行
+    /** 把脚本打印（根步骤）按步骤名归到所在行 */
+    private void groupRootSteps(RuleExecutionRecord record, String[] lines) {
         List<StepLog> rootSteps = record.getRootSteps();
-        if (rootSteps != null && !rootSteps.isEmpty()) {
-            for (StepLog step : rootSteps) {
-                Integer targetLine = null;
-                if (step.getStepName() != null && !step.getStepName().isEmpty()) {
-                    for (int i = 0; i < lines.length; i++) {
-                        if (lines[i].contains(step.getStepName())) {
-                            targetLine = i + 1;
-                            break;
-                        }
-                    }
-                }
-                // 找不到匹配行，兜底放第一行
-                if (targetLine == null) {
-                    targetLine = !record.getLineExecutions().isEmpty()
-                            ? record.getLineExecutions().keySet().iterator().next() : 1;
-                }
-                LineExecution le = record.getLineExecutions().get(targetLine);
-                if (le == null) {
-                    String content = (targetLine >= 1 && targetLine <= lines.length)
-                            ? lines[targetLine - 1] : "";
-                    le = new LineExecution(targetLine, content);
-                    record.getLineExecutions().put(targetLine, le);
-                }
-                le.addStep(step);
+        if (rootSteps == null) return;
+        for (StepLog step : rootSteps) {
+            Integer targetLine = findLineByStepName(lines, step.getStepName());
+            if (targetLine == null) {
+                targetLine = record.getLineExecutions().isEmpty()
+                        ? 1 : record.getLineExecutions().keySet().iterator().next();
             }
+            putLine(record, targetLine, lines);
+            record.getLineExecutions().get(targetLine).addStep(step);
         }
+    }
 
-        // 将 QLExpress 表达式轨迹按行号归入对应的 LineExecution
-        if (qlResult != null && qlResult.getExpressionTraces() != null) {
-            for (ExpressionTrace trace : qlResult.getExpressionTraces()) {
-                collectExpressionTraces(record, trace, lines);
-            }
+    /** 按步骤名找脚本行（首次匹配），找不到返回 null */
+    private Integer findLineByStepName(String[] lines, String stepName) {
+        if (stepName == null || stepName.isEmpty()) return null;
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains(stepName)) return i + 1;
         }
+        return null;
+    }
 
-        // 重算 hasActivity：只有存在调用、打印或被真正求值（evaluated=true）的表达式才算活跃，
-        // 避免未走到的分支（evaluated=false 的预演节点）把行标成“已执行”
+    /** 把 QLExpress 表达式轨迹递归归入对应行 */
+    private void collectTraces(RuleExecutionRecord record, QLResult qlResult, String[] lines) {
+        if (qlResult == null || qlResult.getExpressionTraces() == null) return;
+        for (ExpressionTrace trace : qlResult.getExpressionTraces()) {
+            collectExpressionTraces(record, trace, lines);
+        }
+    }
+
+    /** 重算活跃标记：有调用/打印/被求值表达式才算已执行（排除未走分支的预演节点） */
+    private void recomputeActivity(RuleExecutionRecord record) {
         for (LineExecution le : record.getLineExecutions().values()) {
             boolean active = !le.getCalls().isEmpty() || !le.getSteps().isEmpty();
             for (LineExecution.LineExpression e : le.getExpressions()) {

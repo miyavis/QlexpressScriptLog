@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 
+/** 全局异常处理：把业务异常转成对应 HTTP 状态，兜底异常记服务端日志并向客户端隐藏内部细节。 */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
