@@ -4,7 +4,7 @@
 [![Release](https://github.com/miyavis/QlexpressScriptLog/actions/workflows/release.yml/badge.svg)](https://github.com/miyavis/QlexpressScriptLog/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **在线演示地址：** 部署完成后将在此处更新（Render 公网 URL）。
+> **在线演示地址：** [https://splendid-mercy-production-9282fdcf.up.railway.app](https://splendid-mercy-production-9282fdcf.up.railway.app)
 
 本项目演示如何在 QLExpress 4.1.3 规则执行过程中加入**可观测性**，面向业务人员：
 - 生产环境**事后查看**，不暂停程序、不需要断点/单步
@@ -28,4 +28,3 @@
 - 重启或重新部署后，内存执行记录会清空，脚本文件可能随实例文件系统重置
 
 ---
-
