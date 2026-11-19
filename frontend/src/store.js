@@ -718,7 +718,8 @@ const runScript = async () => {
 /* ---------- 执行记录 API ---------- */
 const loadExecutions = async () => {
   try {
-    executions.value = await requestJson(`${API}/executions?limit=100`, {}, fetch, getApiToken());
+    // 后端上限 200（与 max-execution-records 一致），一次拉全，避免固定 100 漏掉更早记录
+    executions.value = await requestJson(`${API}/executions?limit=200`, {}, fetch, getApiToken());
   } catch (e) {
     alert("加载执行记录失败：" + e.message);
   }
