@@ -92,15 +92,47 @@ public class ScriptStore {
 
     public List<Script> list() {
         synchronized (scripts) {
-            List<Script> all = new ArrayList<>(scripts.values());
+            List<Script> all = new ArrayList<>();
+            for (Script s : scripts.values()) {
+                all.add(deepCopy(s));
+            }
             all.sort(Comparator.comparingLong(Script::getUpdatedAt).reversed());
             return all;
         }
     }
 
+    /**
+     * 获取脚本：返回深拷贝，避免外部持有活引用——
+     * Controller 会在锁外逐字段修改，若返回内部对象，并发 GET 可能读到"改到一半"的脚本。
+     */
     public Script get(String id) {
         synchronized (scripts) {
-            return scripts.get(id);
+            Script found = scripts.get(id);
+            return found == null ? null : deepCopy(found);
+        }
+    }
+
+    /** 借助 Jackson 做深拷贝（简单可靠，脚本对象字段均为可序列化类型） */
+    private Script deepCopy(Script s) {
+        try {
+            String json = com.example.rulelog.util.JsonUtils.mapper().writeValueAsString(s);
+            return com.example.rulelog.util.JsonUtils.mapper().readValue(json, Script.class);
+        } catch (Exception e) {
+            // 极端情况降级：返回浅拷贝（至少 id/name/content 等基本字段可用）
+            Script copy = new Script();
+            copy.setId(s.getId());
+            copy.setName(s.getName());
+            copy.setContent(s.getContent());
+            copy.setDefaultParams(s.getDefaultParams());
+            copy.setMeta(s.getMeta());
+            copy.setVersions(s.getVersions());
+            copy.setCreatedAt(s.getCreatedAt());
+            copy.setUpdatedAt(s.getUpdatedAt());
+            copy.setPublishedVersion(s.getPublishedVersion());
+            copy.setBranch(s.getBranch());
+            copy.setReviewStatus(s.getReviewStatus());
+            copy.setEnvironment(s.getEnvironment());
+            return copy;
         }
     }
 

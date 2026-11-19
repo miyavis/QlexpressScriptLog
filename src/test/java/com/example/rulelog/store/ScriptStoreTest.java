@@ -24,6 +24,24 @@ class ScriptStoreTest {
     Path tempDir;
 
     @Test
+    void getReturnsDeepCopyIsolatedFromStore() {
+        ScriptStore store = new ScriptStore(tempDir.toString());
+        Script s = new Script();
+        s.setId("id1");
+        s.setName("原名");
+        s.setContent("返回 1;");
+        store.put(s);
+
+        Script fetched = store.get("id1");
+        fetched.setName("外部改动"); // 改外部副本
+        fetched.getDefaultParams().put("x", 1);
+
+        Script again = store.get("id1");
+        assertEquals("原名", again.getName(), "外部改动不能污染存储");
+        assertFalse(again.getDefaultParams().containsKey("x"));
+    }
+
+    @Test
     void readWriteRoundTrip() throws Exception {
         ScriptStore store = new ScriptStore(tempDir.toString());
         Script s = new Script();
@@ -71,8 +89,7 @@ class ScriptStoreTest {
     }
 
     @Test
-    void decisionTableDemoHasValidMeta() {
-        ScriptStore store = new ScriptStore(tempDir.toString());
+    void decisionTableDemoHasValidMeta() {        ScriptStore store = new ScriptStore(tempDir.toString());
         Script demo = store.get("decision_table_demo");
         assertNotNull(demo, "应有决策表演示脚本");
         java.util.Map<String, Object> meta = demo.getMeta();
