@@ -41,6 +41,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-aop'
     // QLExpress4：零第三方依赖的新版规则引擎，自带手写 Parser，兼容 Java 8
     implementation 'com.alibaba:qlexpress4:4.1.4'
+    // OpenTelemetry：完整 SDK + OTLP HTTP exporter（版本由 Spring Boot BOM 管理）
+    implementation 'io.opentelemetry:opentelemetry-api'
+    implementation 'io.opentelemetry:opentelemetry-sdk'
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 

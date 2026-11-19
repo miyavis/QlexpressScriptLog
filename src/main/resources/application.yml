@@ -20,3 +20,8 @@ app:
   # 可选 API 鉴权 token：留空=关闭（Demo 零配置可用）；配置后 /api/* 需带 X-Api-Token 头
   # 生产公网部署建议设置（环境变量 APP_API_TOKEN=xxx 覆盖），前端需同步发送该头
   api-token: ""
+  # OpenTelemetry OTLP/HTTP 导出端点；留空=创建 span 但不导出（零告警）
+  # 配置后每次执行生成 root span（traceId 与平台一致），Service 调用为 child span、脚本打印为 event
+  # 例：http://localhost:4318/v1/traces
+  otel:
+    endpoint: ""

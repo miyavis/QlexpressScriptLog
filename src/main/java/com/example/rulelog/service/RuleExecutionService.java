@@ -13,11 +13,13 @@ import com.example.rulelog.model.Script;
 import com.example.rulelog.model.ServiceCallLog;
 import com.example.rulelog.model.StepLog;
 import com.example.rulelog.trace.RuleTraceContext;
+import com.example.rulelog.trace.OtelTraceService;
 import com.example.rulelog.trace.StepLogger;
 import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.store.ScriptStore;
 import com.example.rulelog.util.ErrorSummarizer;
 import com.example.rulelog.util.LineMatcher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -52,6 +54,8 @@ public class RuleExecutionService {
 
     private final ExecutionRecordStore recordStore;
 
+    private final OtelTraceService otel;
+
     private final long timeoutMillis;
 
     public RuleExecutionService(Express4Engine engine,
@@ -59,11 +63,22 @@ public class RuleExecutionService {
                                 ScriptStore scriptStore,
                                 ExecutionRecordStore recordStore,
                                 @Value("${app.script-timeout-millis:5000}") long timeoutMillis) {
+        this(engine, aliasRegistry, scriptStore, recordStore, timeoutMillis, new OtelTraceService(""));
+    }
+
+    @Autowired
+    public RuleExecutionService(Express4Engine engine,
+                                FunctionAliasRegistry aliasRegistry,
+                                ScriptStore scriptStore,
+                                ExecutionRecordStore recordStore,
+                                @Value("${app.script-timeout-millis:5000}") long timeoutMillis,
+                                OtelTraceService otel) {
         this.engine = engine;
         this.aliasRegistry = aliasRegistry;
         this.scriptStore = scriptStore;
         this.recordStore = recordStore;
         this.timeoutMillis = timeoutMillis;
+        this.otel = otel == null ? new OtelTraceService("") : otel;
     }
 
     public RuleExecutionRecord run(String scriptId, Map<String, Object> overrideParams) throws Exception {
@@ -94,6 +109,7 @@ public class RuleExecutionService {
         record.setStartTime(System.currentTimeMillis());
 
         QLResult qlResult = null;
+        io.opentelemetry.context.Context otelRoot = otel.startExecution(traceId, script.getId());
         try {
             // startTrace/set 必须放进 try：万一它们自身异常，finally 仍能清理 ThreadLocal，避免上下文泄漏到后续请求
             StepLogger.startTrace(traceId);
@@ -116,6 +132,9 @@ public class RuleExecutionService {
             groupLogsByLine(record, qlResult, script.getContent());
             record.setEndTime(System.currentTimeMillis());
             record.setDurationMs(Math.max(0, record.getEndTime() - record.getStartTime()));
+            // OTel：把调用/步骤导出为 span/event（在清理 traceId 前，ID 生成器还需要它）
+            otel.exportRecord(record, otelRoot);
+            otel.endExecution(otelRoot, record.isSuccess(), record.getErrorMessage());
             RuleTraceContext.clear();
             recordStore.save(record);
         }
