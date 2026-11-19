@@ -564,6 +564,9 @@ const newScript = () => {
   form.name = "";
   form.content = "";
   form.defaultParamsJson = "{}";
+  form.environment = "dev";
+  versionMessage.value = "";
+  timelineIndex.value = -1;
   canvasCards.value = [];
   canvasMode.value = true;
   lastCanvasScript.value = "";
@@ -583,18 +586,25 @@ const cancelEdit = () => {
   logHoverCardId.value = null;
   selectedCardId.value = null;
   form.id = form.name = form.content = form.defaultParamsJson = "";
+  form.environment = "dev";
+  versionMessage.value = "";
+  timelineIndex.value = -1;
 };
 
 /** 保存快照：检测“有未保存的修改”（执行前提醒，避免执行记录与脚本版本错位） */
-const savedSnapshot = ref({ name: "", content: "", paramsJson: "" });
+const savedSnapshot = ref({ name: "", content: "", paramsJson: "", environment: "dev" });
 const refreshSavedSnapshot = () => {
-  savedSnapshot.value = { name: form.name, content: form.content, paramsJson: form.defaultParamsJson };
+  savedSnapshot.value = {
+    name: form.name, content: form.content, paramsJson: form.defaultParamsJson,
+    environment: form.environment
+  };
 };
 const hasUnsavedChanges = computed(() =>
   editing.value && !!form.id && (
     form.name !== savedSnapshot.value.name ||
     form.content !== savedSnapshot.value.content ||
-    form.defaultParamsJson !== savedSnapshot.value.paramsJson
+    form.defaultParamsJson !== savedSnapshot.value.paramsJson ||
+    form.environment !== savedSnapshot.value.environment
   )
 );
 
