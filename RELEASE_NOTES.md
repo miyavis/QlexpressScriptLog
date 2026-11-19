@@ -3,28 +3,27 @@
 > 本文件只写**本次发版新增**的内容（增量格式）。历史版本正文见 [GitHub Releases](https://github.com/miyavis/QlexpressScriptLog/releases)。
 > 发版流程：更新本文件 → `git tag vX.Y.Z` → `git push origin vX.Y.Z`，CI 读取本文件作为 Release 正文。
 
-## 本次发版（v1.1.1）
+## 本次发版（v1.1.2）
 
-紧急修复版，修复 v1.1.0 发布 jar 缺少前端页面的问题，并补齐若干健壮性与体验问题。
+为公开 Demo 增加「读公开、写需登录」认证能力，保护写操作不被匿名滥用。
 
-### 🐛 修复
+### ✨ 新增功能
 
-- **发布 jar 内嵌前端**：v1.1.0 的 release 流程漏跑 `npm run build`，导致发布的 jar 是纯 API 包（无 index.html，访问 8080 是 404）。本次修复 release.yml：构建前先生成 dist，并在打包后校验 jar 是否含 `BOOT-INF/classes/static/index.html`，缺失即失败，杜绝空壳 jar 再次发布。
-- **OTel 导出失败不再吞掉执行记录**：配置 OTLP 后 collector 不可达时，导出异常会导致执行记录不落盘 + ThreadLocal 泄漏。现已加兜底，导出失败仅告警，记录照常保存、上下文照常清理。
-- **RBAC 角色语义修正**：开启鉴权后，viewer 原可写（POST/PUT/DELETE/执行/评审/发布）。现改为 GET 只读、所有写操作仅 ADMIN；补 RBAC 集成测试（viewer 读 200/写 403、admin 写 200、未认证 401）。
-- **脚本对象并发读**：`ScriptStore.get/list` 原返回活引用，并发 GET 可能读到"改到一半"的脚本。现返回深拷贝，隔离内部存储。
-- **导出丢场景用例**：导出脚本时 `meta.cases`（场景测试用例）未包含，导入后用例丢失。现已随导出保留。
+- **读公开、写需登录**：
+  - 后端：`app.security.enabled` 默认 true——所有 GET 与执行类接口（run / rerun / check）公开；脚本增删改、评审、发布、分支、清空记录等写操作需认证；`/api/audit` 仅管理员。
+  - 前端：写操作遇 401 自动弹登录框，输入账号密码后带 Basic Auth 自动重试原请求；凭据在浏览器会话内保持。
+  - 演示账号：`admin / admin123`（管理员）、`viewer / viewer123`（只读用户）。
+  - 本地开发可设 `APP_SECURITY_ENABLED=false` 完全免登录。
 
-### ✨ 新增 / 改进
+### 🐛 修复 / 改进
 
-- **首屏加载态**：脚本/执行记录加载中显示提示，不再闪"暂无数据"。
-- **键盘可达性**：脚本条支持 Enter/Space 选中，Ctrl+S 保存，画布 Delete 删选中卡。
-- **清空执行记录**：`DELETE /api/executions` + 执行记录页「清空」按钮（审计日志保留）。
-- **测试补充**：OTel 失败路径、RBAC 写权限、`/check` 接口边界、导出 cases 往返。
+- 帮助页与 README 补充认证机制与演示账号说明。
+- 安全边界澄清：脚本沙箱为空白名单，脚本无法访问 Java 类 / 系统资源，认证主要防匿名写操作。
 
 ### 📦 部署
 
-下载 `rule-log-1.1.1.jar`（已内嵌前端，约 32MB，含 index.html），`java -jar rule-log-1.1.1.jar` 即可，浏览器访问 8080。需 JRE 17+。
+下载 `rule-log-1.1.2.jar`（已内嵌前端，约 32MB），`java -jar rule-log-1.1.2.jar` 即可，需 JRE 17+。
+注意：默认开启写鉴权；若部署环境不需要登录，启动时加 `-Dapp.security.enabled=false`。
 
 在线演示：https://qlexpress-script-log-production.up.railway.app
 
@@ -32,19 +31,13 @@
 
 ## 历史版本
 
+### v1.1.1（2026-11-19）
+
+紧急修复 v1.1.0 发布 jar 缺少前端页面（release 流程漏跑 `npm run build`，已加构建后校验 index.html）；OTel 导出失败不再吞执行记录；RBAC viewer 权限修正；脚本 get/list 返回深拷贝；导出保留场景用例；首屏加载态、键盘可达性、清空执行记录。
+
 ### v1.1.0（2026-11-19）
 
-自 v1.0.0 以来 27 次提交的大版本更新，覆盖规则创作、可观测性、平台治理、工程升级四大方向。
-
-**规则创作**：决策表卡片（First/Collect）+ 内置会员折扣演示、画布撤销/重做、场景测试、保存前静态校验、历史参数重跑、执行记录对比、新建脚本便捷性。
-
-**可观测性**：执行时间轴、调用拓扑视图、完整 OpenTelemetry 集成、W3C traceparent、行级业务日志五类配色。
-
-**平台治理**：RBAC、H2 审计日志、分支与评审状态机、发布标记与版本备注、环境标记与筛选、安全加固。
-
-**工程升级**：Spring Boot 3.2.12 + JDK 17、QLExpress 4.1.4、执行记录落盘 JSON、toast 通知、文档同步。
-
-资产：`rule-log-1.1.0.jar`（注：该 jar 因发布流程缺陷缺少前端页面，请改用 v1.1.1）。
+大版本更新：决策表卡片 + 演示、画布撤销/重做、场景测试、执行对比、执行时间轴、调用拓扑、完整 OpenTelemetry、W3C traceparent、H2 审计、分支评审、环境标记、Spring Boot 3.2 + JDK 17、QLExpress 4.1.4。
 
 ### v1.0.0（2026-11-16）
 
