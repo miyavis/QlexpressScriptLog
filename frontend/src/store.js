@@ -26,6 +26,7 @@ import { requestJson } from "./composables/apiClient.js";
 import { trimToasts } from "./composables/toast.js";
 import { makeHistory, pushHistory, popUndo, popRedo, canUndo, canRedo } from "./composables/historyStack.js";
 import { newTestCase, parseCaseParams, summarizeResults } from "./composables/testCases.js";
+import { buildExecutionDiff } from "./composables/executionDiff.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary, buildCondText, findCondVerdict } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
@@ -96,6 +97,18 @@ const selectedLogRecord = ref(null);
 const executions = ref([]);
 const selectedTraceId = ref(null);
 const selectedRecord = ref(null);
+
+/* ---------- 执行记录对比 ---------- */
+const compareA = ref(null); // 第一条选中的记录
+const compareB = ref(null); // 第二条选中的记录
+const executionDiff = computed(() => buildExecutionDiff(compareA.value, compareB.value));
+const toggleCompare = (r) => {
+  if (!compareA.value) { compareA.value = r; notify("已选第一条，再选一条对比", "info"); return; }
+  if (compareA.value.traceId === r.traceId) { compareA.value = null; return; }
+  if (!compareB.value) { compareB.value = r; return; }
+  compareA.value = r; compareB.value = null; // 第三次点击重新开始
+};
+const clearCompare = () => { compareA.value = null; compareB.value = null; };
 
 /* ---------- 辅助 ---------- */
 const formatTime = (ts) => {
@@ -945,11 +958,15 @@ const activeDiffSummary = computed(() => renderDiffRows(activeDiffRows.value));
 /* ---------- 脚本搜索 / 执行记录筛选 ---------- */
 const scriptKeyword = ref("");
 const envFilter = ref("all"); // all | dev | staging | prod
-const visibleScripts = computed(() => {
-  const byKeyword = filterScripts(scripts.value, scriptKeyword.value);
-  if (envFilter.value === "all") return byKeyword;
-  return byKeyword.filter((s) => (s.environment || "dev") === envFilter.value);
-});
+const reviewFilter = ref(""); // "" 全部 | draft | review | published
+const visibleScripts = computed(() =>
+  filterScripts(
+    scripts.value,
+    scriptKeyword.value,
+    reviewFilter.value,
+    envFilter.value === "all" ? "" : envFilter.value
+  )
+);
 
 const execKeyword = ref("");
 const execStatus = ref(""); // "" 全部 | "ok" 成功 | "fail" 失败
@@ -1310,6 +1327,7 @@ export {
   activeDiffSummary,
   scriptKeyword,
   envFilter,
+  reviewFilter,
   visibleScripts,
   execKeyword,
   execStatus,
@@ -1346,6 +1364,11 @@ export {
   isTestingCases,
   addTestCase,
   removeTestCase,
-  runTestCases
+  runTestCases,
+  compareA,
+  compareB,
+  executionDiff,
+  toggleCompare,
+  clearCompare
 };
 

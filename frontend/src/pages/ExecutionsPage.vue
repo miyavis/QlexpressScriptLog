@@ -31,6 +31,12 @@
                   <span class="script-name">{{ r.scriptName }}</span>
                 </div>
                 <div class="exec-item-meta">
+                  <button
+                    class="compare-pick"
+                    :class="{ picked: compareA?.traceId === r.traceId || compareB?.traceId === r.traceId }"
+                    :title="compareA?.traceId === r.traceId ? '已选为第一条' : (compareB?.traceId === r.traceId ? '已选为第二条' : '加入对比')"
+                    @click.stop="toggleCompare(r)"
+                  >{{ compareA?.traceId === r.traceId ? '①' : (compareB?.traceId === r.traceId ? '②' : '⚖') }}</button>
                   <span :class="['badge', r.success ? 'badge-ok' : 'badge-fail']">
                     {{ r.success ? '成功' : '失败' }}
                   </span>
@@ -46,6 +52,27 @@
         </div>
 
         <div class="panel-right">
+          <!-- 两次执行对比 -->
+          <div v-if="compareA || compareB" class="compare-panel detail-card">
+            <div class="card-title">
+              ⚖ 执行对比
+              <button class="btn-secondary sm" @click="clearCompare">清除</button>
+            </div>
+            <div class="compare-body">
+              <div class="compare-row"><span class="compare-label">①</span><code>{{ compareA?.traceId || '（待选）' }}</code></div>
+              <div class="compare-row"><span class="compare-label">②</span><code>{{ compareB?.traceId || '（待选）' }}</code></div>
+              <div v-if="executionDiff.length" class="diff-list">
+                <div v-for="(d, i) in executionDiff" :key="i" class="diff-item">
+                  <span class="diff-field">{{ d.field }}</span>
+                  <span class="diff-left">{{ d.left }}</span>
+                  <span class="diff-arrow">→</span>
+                  <span class="diff-right">{{ d.right }}</span>
+                </div>
+              </div>
+              <p v-else-if="compareA && compareB" class="hint">两次执行无差异（结果/参数/调用耗时一致）。</p>
+              <p v-else class="hint">在左侧列表点 ⚖ 选两条记录进行对比。</p>
+            </div>
+          </div>
           <h2 v-if="!selectedRecord">选择一条记录查看详情</h2>
           <div v-if="selectedRecord" class="detail-card">
             <!-- 概览卡 -->
@@ -346,6 +373,11 @@ import {
   isRerunning,
   callViewMode,
   topologyNodes,
+  compareA,
+  compareB,
+  executionDiff,
+  toggleCompare,
+  clearCompare,
   toggleLogDetail,
   toggleCall,
   registryFunctions,

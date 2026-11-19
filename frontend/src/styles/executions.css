@@ -20,7 +20,25 @@
 .exec-item-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .script-id { font-weight: 600; color: var(--ink-900); font-size: 13px; }
 .script-name { font-size: 12px; color: var(--ink-500); }
-.exec-item-meta { display: flex; gap: 10px; font-size: 12px; color: var(--ink-500); white-space: nowrap; }
+.exec-item-meta { display: flex; gap: 10px; font-size: 12px; color: var(--ink-500); white-space: nowrap; align-items: center; }
+.compare-pick { border: 1px solid var(--ink-300); background: #fff; border-radius: 6px; width: 22px; height: 22px; cursor: pointer; color: var(--ink-500); font-size: 13px; flex: none; }
+.compare-pick:hover { border-color: var(--accent); color: var(--accent); }
+.compare-pick.picked { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+/* 执行对比面板 */
+.compare-panel { margin-bottom: 14px; }
+.compare-body { padding: 10px 14px 14px; }
+.compare-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 4px; }
+.compare-label { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; flex: none; }
+.compare-row code { font-family: var(--font-mono); color: var(--ink-700); }
+.diff-list { margin-top: 10px; border: 1px solid var(--ink-200); border-radius: 8px; overflow: hidden; }
+.diff-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--ink-100); font-size: 12px; }
+.diff-item:last-child { border-bottom: none; }
+.diff-item:nth-child(odd) { background: var(--ink-50); }
+.diff-field { font-weight: 650; color: var(--ink-700); min-width: 90px; }
+.diff-left { color: var(--bad-ink); word-break: break-all; }
+.diff-arrow { color: var(--ink-400); flex: none; }
+.diff-right { color: var(--ok-ink); word-break: break-all; }
+
 .badge { padding: 2px 9px; border-radius: 9px; font-size: 11px; font-weight: 650; }
 .badge-ok { background: var(--ok-soft); color: var(--ok-ink); }
 .badge-fail { background: var(--bad-soft); color: var(--bad-ink); }

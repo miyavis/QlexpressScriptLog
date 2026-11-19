@@ -8,16 +8,23 @@
 
 const norm = (s) => String(s == null ? "" : s).toLowerCase();
 
-/** 脚本列表搜索：关键字匹配名称或 ID；关键字为空返回全部 */
-export const filterScripts = (scripts, keyword) => {
+/**
+ * 脚本列表搜索：关键字匹配名称或 ID；可叠加评审状态/环境筛选。
+ * @param reviewStatus 可选 "draft"|"review"|"published"|""（空=全部）
+ * @param environment 可选 "dev"|"staging"|"prod"|""（空=全部）
+ */
+export const filterScripts = (scripts, keyword, reviewStatus, environment) => {
   if (!Array.isArray(scripts)) {
     return [];
   }
   const k = norm(keyword).trim();
-  if (!k) {
-    return scripts.slice();
-  }
-  return scripts.filter((s) => s && (norm(s.name).includes(k) || norm(s.id).includes(k)));
+  return scripts.filter((s) => {
+    if (!s) return false;
+    if (k && !(norm(s.name).includes(k) || norm(s.id).includes(k))) return false;
+    if (reviewStatus && (s.reviewStatus || "draft") !== reviewStatus) return false;
+    if (environment && (s.environment || "dev") !== environment) return false;
+    return true;
+  });
 };
 
 /**

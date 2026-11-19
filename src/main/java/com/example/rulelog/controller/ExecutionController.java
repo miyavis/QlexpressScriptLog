@@ -83,6 +83,7 @@ public class ExecutionController {
         if (old == null) {
             throw new NotFoundException("执行记录不存在: " + traceId);
         }
+        auditStore.record(currentActor(), "RERUN", old.getScriptId(), "rerun of " + traceId);
         return ruleExecutionService.run(old.getScriptId(), old.getParams());
     }
 

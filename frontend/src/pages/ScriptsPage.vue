@@ -26,6 +26,12 @@
                 <option value="staging">staging</option>
                 <option value="prod">prod</option>
               </select>
+              <select v-model="reviewFilter" class="env-filter" title="按评审状态筛选">
+                <option value="">全部状态</option>
+                <option value="draft">草稿</option>
+                <option value="review">评审中</option>
+                <option value="published">已发布</option>
+              </select>
               <span v-if="scriptKeyword" class="count">{{ visibleScripts.length }}/{{ scripts.length }}</span>
             </div>
           </div>
@@ -675,6 +681,7 @@ import {
   activeDiffSummary,
   scriptKeyword,
   envFilter,
+  reviewFilter,
   auditLogs,
   showAudit,
   toggleAudit,

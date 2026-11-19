@@ -4,7 +4,7 @@
 [![Release](https://github.com/miyavis/QlexpressScriptLog/actions/workflows/release.yml/badge.svg)](https://github.com/miyavis/QlexpressScriptLog/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **在线演示（Railway，一次性 Demo，免费实例可能休眠、重新部署会重置数据）：** [https://splendid-mercy-production-9282fdcf.up.railway.app](https://splendid-mercy-production-9282fdcf.up.railway.app)
+> **在线演示（Railway，一次性 Demo，免费实例可能休眠、重新部署会重置数据）：** [https://qlexpress-script-log-production.up.railway.app](https://qlexpress-script-log-production.up.railway.app)
 
 本项目演示如何在 QLExpress 4.1.4 规则执行过程中加入**可观测性**，面向业务人员：
 - 生产环境**事后查看**，不暂停程序、不需要断点/单步
