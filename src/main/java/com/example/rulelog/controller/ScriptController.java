@@ -7,6 +7,7 @@ import com.example.rulelog.model.ScriptRequest;
 import com.example.rulelog.model.ScriptVersion;
 import com.example.rulelog.service.ScriptVersionService;
 import com.example.rulelog.store.ScriptStore;
+import com.example.rulelog.store.AuditStore;
 import com.example.rulelog.util.RequestValidator;
 import com.example.rulelog.util.ReviewWorkflow;
 import org.springframework.web.bind.annotation.*;
@@ -26,9 +27,11 @@ import java.util.UUID;
 public class ScriptController {
 
     private final ScriptStore scriptStore;
+    private final AuditStore auditStore;
 
-    public ScriptController(ScriptStore scriptStore) {
+    public ScriptController(ScriptStore scriptStore, AuditStore auditStore) {
         this.scriptStore = scriptStore;
+        this.auditStore = auditStore;
     }
 
     /** 列出所有脚本（按更新时间倒序） */
@@ -58,6 +61,7 @@ public class ScriptController {
         script.setCreatedAt(now);
         script.setUpdatedAt(now);
         scriptStore.put(script);
+        auditStore.record(currentActor(), "CREATE", script.getId(), script.getName());
         return script;
     }
 
@@ -82,6 +86,7 @@ public class ScriptController {
         }
         existing.setUpdatedAt(System.currentTimeMillis());
         scriptStore.put(existing);
+        auditStore.record(currentActor(), "UPDATE", existing.getId(), existing.getName());
         return existing;
     }
 
@@ -92,6 +97,7 @@ public class ScriptController {
         if (!removed) {
             throw new NotFoundException("脚本不存在: " + id);
         }
+        auditStore.record(currentActor(), "DELETE", id, "");
         return Collections.singletonMap("ok", true);
     }
 
@@ -115,6 +121,7 @@ public class ScriptController {
             script.setPublishedVersion(latestVersionNo(script));
         }
         scriptStore.put(script);
+        auditStore.record(currentActor(), "REVIEW", script.getId(), action);
         return script;
     }
 
@@ -131,6 +138,7 @@ public class ScriptController {
         script.setBranch(name);
         script.setReviewStatus("draft"); // 切分支即回到草稿
         scriptStore.put(script);
+        auditStore.record(currentActor(), "BRANCH", script.getId(), name);
         return script;
     }
 
@@ -157,6 +165,7 @@ public class ScriptController {
         }
         script.setPublishedVersion(versionNo);
         scriptStore.put(script);
+        auditStore.record(currentActor(), "PUBLISH", script.getId(), "v" + versionNo);
         return script;
     }
 
@@ -167,10 +176,28 @@ public class ScriptController {
         RequestValidator.validateScript(request.getName(), request.getContent());
     }
 
+    /** 当前操作者：优先从 SecurityContext 取，未认证时为 anonymous */
+    private String currentActor() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+                return auth.getName();
+            }
+        } catch (Exception ignored) {
+            // 安全上下文未初始化（如单测），回退 anonymous
+        }
+        return "anonymous";
+    }
+
     private void applyRequest(Script script, ScriptRequest request) {
         script.setName(request.getName());
         script.setContent(request.getContent());
         script.setDefaultParams(request.getDefaultParams());
         script.setMeta(request.getMeta());
+        if (request.getEnvironment() != null) {
+            script.setEnvironment(request.getEnvironment());
+        }
     }
 }
+

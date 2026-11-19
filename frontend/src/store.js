@@ -58,7 +58,8 @@ const form = reactive({
   id: "",
   name: "",
   content: "",
-  defaultParamsJson: "{}"
+  defaultParamsJson: "{}",
+  environment: "dev"
 });
 const versionMessage = ref(""); // 本次保存的版本备注（保存后清空）
 const currentScript = computed(() => scripts.value.find((s) => s.id === form.id) || null);
@@ -570,6 +571,7 @@ const selectScript = (s) => {
   form.name = s.name || "";
   form.content = s.content || "";
   form.defaultParamsJson = compactJson(s.defaultParams);
+  form.environment = s.environment || "dev";
   // 默认展示卡片画布：meta.cards 未过期（contentHash 匹配）时用保存的卡片；
   // 过期（外部手改过内容）或缺失时，以脚本文本为真相重新反解析，避免旧卡片静默覆盖手改内容
   const metaCards = s.meta && Array.isArray(s.meta.cards) ? s.meta.cards : null;
@@ -644,7 +646,8 @@ const saveScript = async (keepOpen = false) => {
     name: form.name,
     content: form.content,
     defaultParams,
-    versionMessage: versionMessage.value || null
+    versionMessage: versionMessage.value || null,
+    environment: form.environment || "dev"
   };
   // meta 是 content 的派生视图（单一事实源）：无论哪种模式都把卡片+映射+hash 一起保存。
   // 文本模式保存时反解析当前文本生成卡片，避免 meta 丢失后打开靠“猜”恢复。
@@ -799,6 +802,21 @@ const historyVersions = computed(() => {
   return cur ? buildVersionList(cur) : [];
 });
 
+/** 审计日志（最近 N 条） */
+const auditLogs = ref([]);
+const showAudit = ref(false);
+const toggleAudit = () => {
+  showAudit.value = !showAudit.value;
+  if (showAudit.value) loadAudit();
+};
+const loadAudit = async () => {
+  try {
+    auditLogs.value = await requestJson(`${API}/audit?limit=50`, {}, fetch, getApiToken());
+  } catch (e) {
+    console.warn("审计日志加载失败：" + e.message);
+  }
+};
+
 /** 评审状态流转：submit / approve / reject */
 const reviewAction = async (action) => {
   if (!form.id) return;
@@ -897,7 +915,12 @@ const activeDiffSummary = computed(() => renderDiffRows(activeDiffRows.value));
 
 /* ---------- 脚本搜索 / 执行记录筛选 ---------- */
 const scriptKeyword = ref("");
-const visibleScripts = computed(() => filterScripts(scripts.value, scriptKeyword.value));
+const envFilter = ref("all"); // all | dev | staging | prod
+const visibleScripts = computed(() => {
+  const byKeyword = filterScripts(scripts.value, scriptKeyword.value);
+  if (envFilter.value === "all") return byKeyword;
+  return byKeyword.filter((s) => (s.environment || "dev") === envFilter.value);
+});
 
 const execKeyword = ref("");
 const execStatus = ref(""); // "" 全部 | "ok" 成功 | "fail" 失败
@@ -1207,12 +1230,17 @@ export {
   switchBranch,
   addDecisionRow,
   addDecisionColumn,
+  auditLogs,
+  showAudit,
+  toggleAudit,
+  loadAudit,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,
   activeDiffRows,
   activeDiffSummary,
   scriptKeyword,
+  envFilter,
   visibleScripts,
   execKeyword,
   execStatus,

@@ -22,13 +22,16 @@ public class ExecutionController {
     private final RuleExecutionService ruleExecutionService;
     private final ExecutionRecordStore recordStore;
     private final Express4Engine engine;
+    private final com.example.rulelog.store.AuditStore auditStore;
 
     public ExecutionController(RuleExecutionService ruleExecutionService,
                                ExecutionRecordStore recordStore,
-                               Express4Engine engine) {
+                               Express4Engine engine,
+                               com.example.rulelog.store.AuditStore auditStore) {
         this.ruleExecutionService = ruleExecutionService;
         this.recordStore = recordStore;
         this.engine = engine;
+        this.auditStore = auditStore;
     }
 
     /** 执行脚本：POST /api/executions/run?scriptId=xxx （Body 为参数 JSON） */
@@ -36,6 +39,7 @@ public class ExecutionController {
     public RuleExecutionRecord run(@RequestParam String scriptId,
                                    @RequestBody(required = false) java.util.Map<String, Object> params)
             throws Exception {
+        auditStore.record("user", "RUN", scriptId, params == null ? "" : String.valueOf(params));
         // 执行错误已被 RuleExecutionService 转成 record 内的 errorMessage 展示；
         // 这里不再包一层 RuntimeException（会把内部异常信息经 GlobalExceptionHandler 泄漏）
         return ruleExecutionService.run(scriptId, params);

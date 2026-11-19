@@ -7,6 +7,7 @@
             <div class="toolbar">
               <button class="btn-primary" @click="newScript">+ 新建脚本</button>
               <button class="btn-secondary" @click="$refs.scriptImportFile.click()">导入脚本</button>
+              <button class="btn-secondary" @click="toggleAudit">{{ showAudit ? '收起审计' : '审计日志' }}</button>
               <input
                 ref="scriptImportFile"
                 type="file"
@@ -19,6 +20,12 @@
                 class="search-input"
                 placeholder="🔍 搜索脚本名称 / ID"
               />
+              <select v-model="envFilter" class="env-filter" title="按环境筛选">
+                <option value="all">全部环境</option>
+                <option value="dev">dev</option>
+                <option value="staging">staging</option>
+                <option value="prod">prod</option>
+              </select>
               <span v-if="scriptKeyword" class="count">{{ visibleScripts.length }}/{{ scripts.length }}</span>
             </div>
           </div>
@@ -31,11 +38,27 @@
             >
               <div class="script-item-info">
                 <div class="script-item-name">{{ s.name }}</div>
-                <div class="script-item-id">{{ s.id }}</div>
+                <div class="script-item-id">{{ s.id }} <span class="env-badge" :class="s.environment || 'dev'">{{ s.environment || 'dev' }}</span></div>
               </div>
               <button class="btn-delete sm" @click.stop="deleteScript(s.id)">删除</button>
             </li>
           </ul>
+          <div v-if="showAudit" class="audit-panel">
+            <div class="audit-head">审计日志（最近 50 条，H2 持久化）</div>
+            <div v-if="auditLogs.length === 0" class="empty">暂无审计记录</div>
+            <table v-else class="audit-table">
+              <thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+              <tbody>
+                <tr v-for="(a, i) in auditLogs" :key="i">
+                  <td>{{ formatTime(a.TS) }}</td>
+                  <td>{{ a.ACTOR }}</td>
+                  <td><span class="audit-action">{{ a.ACTION }}</span></td>
+                  <td>{{ a.TARGET }}</td>
+                  <td>{{ a.DETAIL }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p v-if="scripts.length === 0" class="empty">暂无脚本，点击右上角「+ 新建脚本」创建。</p>
           <p v-else-if="visibleScripts.length === 0" class="empty">没有匹配「{{ scriptKeyword }}」的脚本。</p>
         </div>
@@ -461,6 +484,13 @@
 
             <div v-if="currentScript" class="review-bar">
               <span class="review-branch">分支：<b>{{ currentScript.branch || 'main' }}</b></span>
+              <label class="review-env">环境
+                <select v-model="form.environment" class="card-input">
+                  <option value="dev">dev</option>
+                  <option value="staging">staging</option>
+                  <option value="prod">prod</option>
+                </select>
+              </label>
               <span class="review-status" :class="currentScript.reviewStatus || 'draft'">
                 {{ { draft: '草稿', review: '评审中', published: '已发布' }[currentScript.reviewStatus] || '草稿' }}
               </span>
@@ -609,6 +639,10 @@ import {
   activeDiffRows,
   activeDiffSummary,
   scriptKeyword,
+  envFilter,
+  auditLogs,
+  showAudit,
+  toggleAudit,
   visibleScripts,
   execKeyword,
   execStatus,

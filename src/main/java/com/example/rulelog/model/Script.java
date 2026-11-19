@@ -40,6 +40,9 @@ public class Script {
     /** 评审状态：draft / review / published */
     private String reviewStatus = "draft";
 
+    /** 部署环境：dev / staging / prod（仅作标记与筛选，不影响执行） */
+    private String environment = "dev";
+
     public String getId() {
         return id;
     }
@@ -127,5 +130,14 @@ public class Script {
     public void setReviewStatus(String reviewStatus) {
         this.reviewStatus = reviewStatus == null || reviewStatus.trim().isEmpty()
                 ? "draft" : reviewStatus.trim();
+    }
+
+    public String getEnvironment() {
+        return environment;
+    }
+
+    public void setEnvironment(String environment) {
+        this.environment = environment == null || environment.trim().isEmpty()
+                ? "dev" : environment.trim();
     }
 }

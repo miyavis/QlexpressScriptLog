@@ -372,6 +372,20 @@
 .review-status.review { background: #fef3c7; color: #92400e; }
 .review-status.published { background: var(--ok-soft); color: var(--ok-ink); }
 .review-actions { display: flex; gap: 6px; margin-left: auto; }
+.review-env { font-size: 12px; color: var(--ink-700); display: flex; align-items: center; gap: 4px; }
+.review-env .card-input { width: 90px; }
+
+/* 审计面板 */
+.audit-panel { margin-top: 12px; border-top: 1px dashed var(--ink-200); padding-top: 10px; }
+.audit-head { font-size: 12.5px; font-weight: 650; color: var(--ink-700); margin-bottom: 8px; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.audit-table th, .audit-table td { border: 1px solid var(--ink-200); padding: 4px 8px; text-align: left; }
+.audit-table th { background: var(--ink-50); color: var(--ink-500); font-weight: 600; }
+.audit-action { font-family: var(--font-mono); color: var(--accent); }
+.env-badge { font-size: 10px; padding: 0 5px; border-radius: 6px; background: var(--ink-200); color: var(--ink-700); }
+.env-badge.staging { background: #fef3c7; color: #92400e; }
+.env-badge.prod { background: var(--ok-soft); color: var(--ok-ink); }
+.env-filter { padding: 7px 10px; border: 1px solid var(--ink-300); border-radius: 8px; background: #fff; font-size: 13px; color: var(--ink-700); }
 .version-time { font-size: 11px; color: var(--ink-400); font-weight: 400; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .version-preview {
   font-size: 11.5px; color: var(--ink-500); white-space: nowrap; overflow: hidden;

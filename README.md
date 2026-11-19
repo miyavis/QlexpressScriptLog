@@ -23,6 +23,9 @@
 | Spring Boot | 3.2.12 |
 | JDK | 17 |
 | QLExpress | 4.1.4 (`com.alibaba:qlexpress4`) |
+| OpenTelemetry | 1.31.0（SDK + OTLP HTTP，traceId 与平台对齐） |
+| 审计库 | H2 嵌入式（内存模式，只增不改） |
+| 安全 | Spring Security（RBAC 可选启用） |
 | Vue | 3.4 |
 | Vite | 4 |
 
@@ -63,9 +66,9 @@
 
 7. **创作层可插拔**：平台不关心脚本是人写的还是卡片画布生成的。卡片化 = 外层转换器（卡片 → 中文脚本 + sourceMap），平台只增加一个 `meta` 透传字段；Canvas 联动按“行号反查卡片”实现，无映射时自动降级为纯行号，无功能断点。
 
-8. **安全边界显式化**：脚本执行有超时（默认 5s）；安全策略当前为 `QLSecurityStrategy.open()`（演示方便），生产按白名单 `whiteList(...)` 收紧，原则是“默认不放行，有明确清单”。
+8. **安全边界显式化**：脚本执行有超时（默认 5s）；`Express4Engine` 用空白名单 `QLSecurityStrategy.whiteList(emptySet)` 禁止脚本访问任何 Java 类/系统资源（测试已验证 RCE 被拦），业务能力只走注册函数。
 
-9. **简单可实现优先**：脚本与执行记录都持久化到 JSON 文件（相对路径锚定应用所在目录，随项目走；原子写、坏文件自动备份兜底启动），重启不丢。无数据库、无 RBAC、无环境隔离——Demo 够用，生产可替换为 DB 并收紧安全策略。整个后端零第三方业务依赖（除 Spring/Jackson/QLExpress 本身），为的是任何人拿到代码就能跑起来。
+9. **简单可实现优先**：脚本与执行记录持久化到 JSON 文件（相对路径锚定应用所在目录；原子写、坏文件兜底），重启不丢。审计日志另存 H2 嵌入式 DB（追加写、只增不改），脚本可标记分支/评审状态/环境（dev/staging/prod）。RBAC 默认关闭（Demo 零配置可用），生产可开启并接外部用户源。
 
 ---
 
@@ -88,9 +91,15 @@ src/main/java/com/example/rulelog/
 ├── service/
 │   ├── RuleExecutionService.java    执行入口：生成 traceId → 调 QLExpress → 聚合日志 → 按行号分组 → 存记录
 │   └── ScriptVersionService.java    脚本版本历史（修改前自动快照，最新在前，最多 10 个，可单测）
+├── trace/
+│   ├── OtelTraceService.java        OpenTelemetry 桥接（执行→trace、调用→span、步骤→event）
+│   └── OtelIdGenerator.java         OTel traceId 与平台 traceId 对齐
+├── config/
+│   └── SecurityConfig.java          RBAC 可选启用（admin/viewer）
 ├── store/
 │   ├── ScriptStore.java             脚本 JSON 文件持久化（data/scripts.json）
-│   └── ExecutionRecordStore.java    执行记录库（内存 LinkedHashMap + 落盘 JSON，重启不丢）
+│   ├── ExecutionRecordStore.java    执行记录库（内存 LinkedHashMap + 落盘 JSON，重启不丢）
+│   └── AuditStore.java              审计日志（H2 嵌入式，只增不改）
 ├── controller/
 │   ├── ScriptController.java        脚本 CRUD (/api/scripts)
 │   ├── ExecutionController.java     执行记录查询 (/api/executions)
@@ -110,7 +119,7 @@ src/main/java/com/example/rulelog/
     ├── JsonUtils.java               Jackson 工具
     └── ErrorSummarizer.java         执行错误中文摘要器（行号提取 + 中文分类 + 出错行内容 + 保留原始信息）
 ```
-前端（`frontend/`）：Vite 4 + Vue 3.4。**App.vue 是 43 行布局壳**（左侧菜单 + 内容区 + 页脚），全局样式已拆到 `src/styles/`（tokens 设计令牌 / base 通用原语 / scripts 与 executions 页面专属）；页面在 `src/pages/`（ScriptsPage / ExecutionsPage / HelpPage）；共享状态与动作在 `src/store.js`（模块级单例）；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`apiClient.js` 统一请求封装、`logPresentation.js` 行级日志业务描述、`executionTimeline.js` 执行时间轴、`callTopology.js` 调用拓扑、`scriptTransfer.js` 脚本导出/导入、`versionHistory.js` 版本历史、`diffPreview.js` 行级对比、`listFilters.js` 列表筛选、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 133 个用例，含 store 导出完整性、行级日志展示与 round-trip 性质测试）。
+前端（`frontend/`）：Vite 4 + Vue 3.4。**App.vue 是 43 行布局壳**（左侧菜单 + 内容区 + 页脚），全局样式已拆到 `src/styles/`（tokens 设计令牌 / base 通用原语 / scripts 与 executions 页面专属）；页面在 `src/pages/`（ScriptsPage / ExecutionsPage / HelpPage）；共享状态与动作在 `src/store.js`（模块级单例）；纯逻辑抽在 `src/composables/`（`canvasLogic.js` 画布生成/反解析/校验、`functionRegistry.js` 函数注册表辅助、`apiClient.js` 统一请求封装、`logPresentation.js` 行级日志业务描述、`executionTimeline.js` 执行时间轴、`callTopology.js` 调用拓扑、`decisionTable.js` 决策表脚本生成、`scriptTransfer.js` 脚本导出/导入、`versionHistory.js` 版本历史、`diffPreview.js` 行级对比、`listFilters.js` 列表筛选、`exportRecord.js` 执行记录导出），全部可单测（`tests/` 下 137 个用例，含 store 导出完整性、行级日志展示与 round-trip 性质测试）。
 
 ---
 
@@ -502,8 +511,12 @@ for each card in cards:
 
 ## 注意事项与扩展建议
 
-1. **执行记录落盘 JSON**：`ExecutionRecordStore` 用 `LinkedHashMap`（插入顺序 + `synchronized`）并原子写到 `data/executions.json`，重启不丢；坏文件安全降级为空库。未引入 DB / RBAC / 环境隔离（超出 Demo 定位），生产可自行替换数据库。每次执行另带 W3C `traceparent` 字段（由 traceId 映射，轻量对接 OTel 生态，不引入 SDK）。
-2. **前后端单测**：前端（`cd frontend && npm run test`，133 个用例）覆盖 composables 纯逻辑（画布生成/反解析/合并启发式/hash/结构配对、函数注册表、统一 API 封装、行级日志展示、执行时间轴、调用拓扑、导出、脚本导入导出、版本历史、行级 diff、列表筛选）+ store 导出完整性 + round-trip 性质测试（画布生成的脚本反解析再生成必须逐字一致）；后端（`./gradlew test`）覆盖函数注册表、错误摘要器、版本历史、引擎安全策略（沙箱白名单）、脚本持久化（原子写）、请求校验、行号匹配、执行链路集成、保存前静态校验、历史参数重跑。
+1. **执行记录落盘 JSON**：`ExecutionRecordStore` 用 `LinkedHashMap`（插入顺序 + `synchronized`）并原子写到 `data/executions.json`，重启不丢；坏文件安全降级为空库。每次执行另带 W3C `traceparent` 字段（由 traceId 映射）。
+   - **审计日志（H2）**：`AuditStore` 用嵌入式 H2 表 `audit_log` 记录 CREATE/UPDATE/DELETE/RUN/REVIEW/BRANCH/PUBLISH 操作（谁/何时/动作/对象），`GET /api/audit` 查询；脚本页「审计日志」按钮可展开查看。H2 内存模式，重启清空审计。
+   - **OpenTelemetry**：`OtelTraceService` 把每次执行映射为 OTel trace（traceId 与平台一致），Service 调用为 child span、脚本打印为 event；`app.otel.endpoint` 留空时只建 span 不导出（零告警），配置 OTLP/HTTP 端点后推送 collector。
+   - **RBAC（可选）**：`app.security.enabled=false` 默认放行；开启后内置 admin/viewer 用户（密码可配），`/api/audit` 仅 ADMIN，其余 API 需认证。生产请改默认密码并接外部用户源。
+   - **分支/评审/环境**：脚本带 `branch`（默认 main）、`reviewStatus`（draft→review→published/驳回）、`environment`（dev/staging/prod）；保存已发布脚本自动回草稿，需重新评审。前端提供分支切换、评审按钮、环境筛选。
+2. **前后端单测**：前端（`cd frontend && npm run test`，137 个用例）覆盖 composables 纯逻辑（画布生成/反解析/合并启发式/hash/结构配对、函数注册表、统一 API 封装、行级日志展示、执行时间轴、调用拓扑、导出、脚本导入导出、版本历史、行级 diff、列表筛选）+ store 导出完整性 + round-trip 性质测试（画布生成的脚本反解析再生成必须逐字一致）；后端（`./gradlew test`）覆盖函数注册表、错误摘要器、版本历史、引擎安全策略（沙箱白名单）、脚本持久化（原子写）、请求校验、行号匹配、执行链路集成、保存前静态校验、历史参数重跑。
 3. **脚本文件路径（换机器必看）**：`data` 为相对路径时锚定**应用所在目录**（开发运行=项目根目录；打 jar 运行=jar 所在目录），项目拷到任何机器/位置都能找到，不受“从哪个目录启动”影响。给别人的机器上请**一起拷 `data/scripts.json`**，否则对方首次启动只会看到内置示例脚本；若该文件损坏/手工编辑写坏，程序会在日志里备份为 `scripts.json.bak-时间戳` 并用内置示例启动，修正后重命名回 `scripts.json` 重启即可恢复。启动日志会打印“脚本数据目录（解析后绝对路径）”，可用来确认实际读取位置。
 4. **安全策略（已加固）**：`Express4Engine` 使用**空白名单** `QLSecurityStrategy.whiteList(Collections.emptySet())`——脚本只能调用通过 `addFunction` 注册的业务函数与 QLExpress 内建表达式，**无法访问 Java 类/反射/文件系统/系统命令**（单元测试已验证恶意脚本被拦、业务脚本不误伤）。
 5. **可选 API 鉴权**：`application.yml` 的 `app.api-token` 默认空=关闭（Demo 零配置可用）；公网生产部署建议设置环境变量 `APP_API_TOKEN=xxx` 启用——启用后所有 `/api/*` 需带 `X-Api-Token` 头，否则 401。前端在浏览器控制台执行 `localStorage.setItem("rulelog-api-token", "xxx")` 即可让页面带上该头（静态资源不受保护，页面仍可打开）。

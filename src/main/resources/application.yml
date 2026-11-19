@@ -6,6 +6,15 @@ spring:
     name: rule-log
   jackson:
     default-property-inclusion: always
+  # H2 嵌入式数据库（审计日志）：内存模式，重启清空审计（脚本/执行记录仍走 JSON 落盘）
+  datasource:
+    url: jdbc:h2:mem:rulelog;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
 
 app:
   # 脚本 JSON 文件存放目录。
@@ -25,3 +34,8 @@ app:
   # 例：http://localhost:4318/v1/traces
   otel:
     endpoint: ""
+  # RBAC：默认关闭（Demo 零配置可用）；开启后 /api/audit 仅 admin，其余需认证
+  security:
+    enabled: false
+    admin-password: admin123
+    viewer-password: viewer123
