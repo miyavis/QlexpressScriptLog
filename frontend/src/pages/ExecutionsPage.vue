@@ -53,7 +53,12 @@
               <div class="card">
                 <div class="card-title">
                   概览
-                  <button class="btn-secondary sm" @click="downloadExecution(selectedRecord)">导出 JSON</button>
+                  <span class="detail-title-actions">
+                    <button class="btn-secondary sm" :disabled="isRerunning" @click="rerunRecord(selectedRecord)">
+                      {{ isRerunning ? "重跑中…" : "用此参数重跑" }}
+                    </button>
+                    <button class="btn-secondary sm" @click="downloadExecution(selectedRecord)">导出 JSON</button>
+                  </span>
                 </div>
                 <div class="metrics">
                   <div class="metric">
@@ -310,6 +315,8 @@ import {
   exportCurrentScript,
   importScriptFromFile,
   selectExecution,
+  rerunRecord,
+  isRerunning,
   toggleLogDetail,
   toggleCall,
   registryFunctions,

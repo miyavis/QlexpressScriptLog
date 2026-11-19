@@ -115,4 +115,14 @@ public class Express4Engine {
     public void check(String script) throws QLSyntaxException {
         runner.check(script);
     }
+
+    /** 脚本内被赋值/更新的变量名（QLExpress 4.1.4 API，用于静态校验） */
+    public java.util.Set<String> getAssignedVarNames(String script) {
+        return runner.getAssignVarNames(script);
+    }
+
+    /** 脚本引用的外部变量名（需在入参或脚本内赋值前提供） */
+    public java.util.Set<String> getOutVarNames(String script) {
+        return runner.getOutVarNames(script);
+    }
 }

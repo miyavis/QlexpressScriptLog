@@ -153,6 +153,17 @@
 /* 空状态垂直居中填满日志卡 */
 .log-card .call-list .log-empty { margin: auto; }
 
+/* 执行时间轴回放条 */
+.timeline-bar {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 6px 10px; margin-bottom: 8px;
+  background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: var(--r-md);
+}
+.timeline-progress {
+  flex: 1; text-align: center; font-size: 11.5px; color: var(--accent); font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* 行级日志条目 */
 .log-line-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; }
 .log-line-item {

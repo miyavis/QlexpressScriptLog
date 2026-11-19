@@ -24,6 +24,7 @@ import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc } from "./composables/logPresentation.js";
+import { buildTimeline } from "./composables/executionTimeline.js";
 
 const API = "/api";
 
@@ -42,6 +43,7 @@ const EDITOR_LINE_HEIGHT = 22;
 /* ---------- 视图状态 ---------- */
 const view = ref("scripts"); // 'scripts' | 'executions'
 const isRunning = ref(false); // 执行中：防重复提交，按钮可据此禁用
+const isRerunning = ref(false); // 历史重跑中：防重复提交
 
 /* ---------- 脚本管理状态 ---------- */
 const scripts = ref([]);
@@ -98,6 +100,30 @@ const lineLogGroups = computed(() => {
   return Object.values(selectedLogRecord.value.lineExecutions)
     .sort((a, b) => a.lineNo - b.lineNo);
 });
+
+/* ---------- 执行时间轴（逐步回放） ---------- */
+const timelineIndex = ref(-1); // -1 = 未开始；0..n-1 = 当前回放步骤
+const executionTimeline = computed(() =>
+  selectedLogRecord.value
+    ? buildTimeline(selectedLogRecord.value.lineExecutions)
+    : []
+);
+const timelineCurrent = computed(() =>
+  timelineIndex.value >= 0 && timelineIndex.value < executionTimeline.value.length
+    ? executionTimeline.value[timelineIndex.value] : null
+);
+// 切换日志记录时自动重置回放进度
+watch(selectedLogRecord, () => { timelineIndex.value = -1; });
+/** 前进一步（到末尾回到未开始）；后退一步（未开始回到末尾） */
+const timelineStep = (dir) => {
+  const n = executionTimeline.value.length;
+  if (n === 0) return;
+  if (dir > 0) {
+    timelineIndex.value = timelineIndex.value >= n - 1 ? -1 : timelineIndex.value + 1;
+  } else {
+    timelineIndex.value = timelineIndex.value <= -1 ? n - 1 : timelineIndex.value - 1;
+  }
+};
 
 /** 执行摘要：供业务人员快速了解整体逻辑 */
 const execSummary = computed(() => {
@@ -620,6 +646,21 @@ const saveScript = async (keepOpen = false) => {
     contentHash: hashContent(form.content)
   };
 
+  // 保存前静态校验：语法错误与未定义变量前移，不让有问题的脚本入库
+  try {
+    const check = await requestJson(`${API}/executions/check`, {
+      method: "POST",
+      body: JSON.stringify({ content: form.content, paramKeys: Object.keys(defaultParams) })
+    }, fetch, getApiToken());
+    if (check && check.valid === false) {
+      if (!confirm("静态检查发现问题：" + check.message + "\n\n仍要保存吗？（建议先修正）")) {
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("静态校验服务不可用，跳过：" + e.message);
+  }
+
   try {
     if (form.id) {
       await requestJson(`${API}/scripts/${form.id}`, {
@@ -883,6 +924,28 @@ const selectExecution = (r) => {
   selectedRecord.value = r;
 };
 
+/** 用历史记录的参数快照重新执行（生成新记录），完成后刷新列表并选中新记录 */
+const rerunRecord = async (record) => {
+  if (isRerunning.value || !record) return;
+  isRerunning.value = true;
+  try {
+    const fresh = await requestJson(
+      `${API}/executions/rerun?traceId=${encodeURIComponent(record.traceId)}`,
+      { method: "POST" }, fetch, getApiToken()
+    );
+    await loadExecutions();
+    if (fresh && fresh.traceId) {
+      const found = executions.value.find((r) => r.traceId === fresh.traceId);
+      selectExecution(found || fresh);
+    }
+    alert("已用该记录的参数重新执行，结果见详情。");
+  } catch (e) {
+    alert("重跑失败：" + e.message);
+  } finally {
+    isRerunning.value = false;
+  }
+};
+
 /** 切换脚本右侧日志详情展开/折叠 */
 const toggleLogDetail = (r) => {
   if (selectedLogTraceId.value === r.traceId) {
@@ -983,6 +1046,10 @@ export {
   compactJson,
   lineLogGroups,
   execSummary,
+  executionTimeline,
+  timelineIndex,
+  timelineCurrent,
+  timelineStep,
   truncate,
   formatExprValue,
   fmtScalar,
@@ -1075,6 +1142,8 @@ export {
   exportCurrentScript,
   importScriptFromFile,
   selectExecution,
+  rerunRecord,
+  isRerunning,
   toggleLogDetail,
   toggleCall,
   registryFunctions,

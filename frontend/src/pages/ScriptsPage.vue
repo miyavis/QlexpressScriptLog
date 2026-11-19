@@ -271,6 +271,14 @@
                 </div>
                 <div v-if="!selectedLogRecord" class="log-empty">执行脚本后，右侧将逐行显示日志</div>
                 <div v-else class="call-list">
+                  <!-- 执行时间轴：逐步回放 -->
+                  <div v-if="executionTimeline.length" class="timeline-bar">
+                    <button class="btn-secondary sm" @click="timelineStep(-1)" title="上一步">◀</button>
+                    <span class="timeline-progress">
+                      {{ timelineCurrent ? `第 ${timelineIndex + 1}/${executionTimeline.length} 步 · 第 ${timelineCurrent.lineNo} 行 · ${timelineCurrent.label}` : `共 ${executionTimeline.length} 步（点 ▶ 开始回放）` }}
+                    </span>
+                    <button class="btn-secondary sm" @click="timelineStep(1)" title="下一步">▶</button>
+                  </div>
                   <!-- 执行摘要卡片 -->
                   <div class="exec-summary" :class="{ collapsed: !execSummaryExpanded }">
                     <div class="exec-summary-title" @click="execSummaryExpanded = !execSummaryExpanded" style="cursor:pointer;">
@@ -326,7 +334,7 @@
                     v-for="le in lineLogGroups"
                     :key="le.lineNo"
                     class="log-line-item"
-                    :class="{ active: le.lineNo === hoverLineNo || activeLineSet.has(le.lineNo) }"
+                    :class="{ active: le.lineNo === hoverLineNo || activeLineSet.has(le.lineNo) || (timelineCurrent && timelineCurrent.lineNo === le.lineNo) }"
                     role="button"
                     tabindex="0"
                     @mouseenter="onLogLineEnter(le.lineNo)"
@@ -442,6 +450,10 @@ import {
   compactJson,
   lineLogGroups,
   execSummary,
+  executionTimeline,
+  timelineIndex,
+  timelineCurrent,
+  timelineStep,
   truncate,
   formatExprValue,
   fmtScalar,
