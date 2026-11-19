@@ -4,6 +4,7 @@
           <h2>执行记录</h2>
           <div class="toolbar">
             <button class="btn-secondary" @click="loadExecutions">刷新</button>
+            <button class="btn-delete sm" @click="clearExecutions" title="清空所有执行记录">清空</button>
             <select v-model="execStatus" class="search-input narrow" title="按状态筛选">
               <option value="">全部状态</option>
               <option value="ok">只看成功</option>
@@ -353,6 +354,7 @@ import {
   runScript,
   loadExecutions,
   isLoadingExecutions,
+  clearExecutions,
   loadScriptExecutions,
   downloadExecution,
   showHistory,

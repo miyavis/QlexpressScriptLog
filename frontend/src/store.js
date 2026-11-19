@@ -791,6 +791,19 @@ const runScript = async () => {
 };
 
 /* ---------- 执行记录 API ---------- */
+/** 清空所有执行记录 */
+const clearExecutions = async () => {
+  if (!confirm("确定清空所有执行记录吗？此操作不可恢复（审计日志保留）。")) return;
+  try {
+    await requestJson(`${API}/executions`, { method: "DELETE" }, fetch, getApiToken());
+    executions.value = [];
+    if (currentScript.value) await loadScriptExecutions(currentScript.value.id);
+    notify("执行记录已清空", "success");
+  } catch (e) {
+    notify("清空失败：" + e.message, "error");
+  }
+};
+
 const loadExecutions = async () => {
   isLoadingExecutions.value = true;
   try {
@@ -1364,6 +1377,7 @@ export {
   dismissToast,
   isLoadingScripts,
   isLoadingExecutions,
+  clearExecutions,
   canUndoCards,
   canRedoCards,
   undoCards,

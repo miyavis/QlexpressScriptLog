@@ -66,6 +66,14 @@ public class ExecutionController {
         return recordStore.listRecent(RequestValidator.normalizeLimit(limit));
     }
 
+    /** 清空所有执行记录 */
+    @DeleteMapping
+    public Map<String, Boolean> clear() {
+        recordStore.clear();
+        auditStore.record(currentActor(), "CLEAR", "executions", "");
+        return java.util.Collections.singletonMap("ok", true);
+    }
+
     /** 单条执行记录详情（含日志、调用链） */
     @GetMapping("/{traceId}")
     public RuleExecutionRecord get(@PathVariable String traceId) {

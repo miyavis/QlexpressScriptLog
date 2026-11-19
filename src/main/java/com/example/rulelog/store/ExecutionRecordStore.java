@@ -68,6 +68,14 @@ public class ExecutionRecordStore {
         }
     }
 
+    /** 清空所有执行记录（含落盘文件） */
+    public void clear() {
+        synchronized (records) {
+            records.clear();
+            persist();
+        }
+    }
+
     /** 最近优先的列表 */
     public List<RuleExecutionRecord> listRecent(int limit) {
         synchronized (records) {
