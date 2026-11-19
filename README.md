@@ -169,7 +169,7 @@ cd D:\project\LogTest
 
 > Windows PowerShell 中文日志乱码：先执行 `chcp 65001` 把控制台切到 UTF-8 再启动（bootRun 已配置 JVM 以 UTF-8 输出）。Jar 方式运行同理：`java -Dfile.encoding=UTF-8 -jar xxx.jar`。
 
-后端启动成功后，监听 `http://localhost:8080`。首次启动会在 `data/scripts.json` 写入三条示例脚本。
+后端启动成功后，监听 `http://localhost:8080`。首次启动会在 `data/scripts.json` 写入四条示例脚本（VIP 折扣 / 积分翻倍 / 带参取数 / 决策表演示）。
 
 ### 2. 启动前端（Vite + Vue）
 
@@ -324,6 +324,25 @@ git push origin v1.0.0
 ```
 
 默认参数：`{"user": "张三"}` → 返回 `334.4`（380 × 0.88）。打开画布可见两张 🧰 **带参取数卡**，各占两行（参数定义行 + 服务调用行），卡片右上角显示行区间。
+
+**4. 决策表演示（`decision_table_demo`，会员折扣）**
+
+```text
+积分 = 查询用户积分(user);
+等级 = 查询用户等级(user);
+如果 (积分 > 100 && 等级 == "VIP") 则 {
+    折扣 = 0.7;
+} 否则 {
+    如果 (积分 > 50) 则 {
+        折扣 = 0.85;
+    } 否则 {
+        折扣 = 1;
+    }
+}
+返回 折扣;
+```
+
+默认参数：`{"user": "张三"}` → 返回 `0.7`（张三=VIP、积分380，命中 First 首行）。打开画布可见一张 ▦ **决策表卡**（2 条件 × 2 行，First 策略）+ 返回卡——这是种子脚本预置的 `meta.cards`，`contentHash` 与脚本匹配，前端直接复用而不会退化成普通 if 卡。
 
 ---
 

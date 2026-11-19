@@ -265,6 +265,90 @@ public class ScriptStore {
         prepCall.setUpdatedAt(now);
         seeds.add(prepCall);
 
+        // 决策表演示：画布模式直接显示一张决策表卡（带完整 meta，contentHash 匹配才不会退化成普通卡）
+        Script decision = new Script();
+        decision.setId("decision_table_demo");
+        decision.setName("决策表演示（会员折扣）");
+        String decisionScript = "积分 = 查询用户积分(user);\n"
+                + "等级 = 查询用户等级(user);\n"
+                + "如果 (积分 > 100 && 等级 == \"VIP\") 则 {\n"
+                + "    折扣 = 0.7;\n"
+                + "} 否则 {\n"
+                + "    如果 (积分 > 50) 则 {\n"
+                + "        折扣 = 0.85;\n"
+                + "    } 否则 {\n"
+                + "        折扣 = 1;\n"
+                + "    }\n"
+                + "}\n"
+                + "返回 折扣;";
+        decision.setContent(decisionScript);
+        decision.setDefaultParams(new java.util.LinkedHashMap<>(java.util.Collections.singletonMap("user", "张三")));
+        decision.setMeta(buildDemoDecisionMeta(decisionScript));
+        decision.setCreatedAt(now);
+        decision.setUpdatedAt(now);
+        seeds.add(decision);
+
         return seeds;
+    }
+
+    /** 构造决策表演示的画布 meta：4 张卡 + 行号映射 + contentHash（与前端一致） */
+    private Map<String, Object> buildDemoDecisionMeta(String script) {
+        java.util.List<Map<String, Object>> cards = new ArrayList<>();
+        cards.add(card("c1", "call", fields("varName", "积分", "func", "查询用户积分", "param", "user")));
+        cards.add(card("c2", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
+        // 决策表卡：First 策略，两条件两行
+        Map<String, Object> row1 = new LinkedHashMap<>();
+        row1.put("cells", java.util.Arrays.asList("> 100", "== \"VIP\""));
+        row1.put("result", "0.7");
+        Map<String, Object> row2 = new LinkedHashMap<>();
+        row2.put("cells", java.util.Arrays.asList("> 50", ""));
+        row2.put("result", "0.85");
+        Map<String, Object> dtFields = new LinkedHashMap<>();
+        dtFields.put("strategy", "first");
+        dtFields.put("resultVar", "折扣");
+        dtFields.put("conditions", java.util.Arrays.asList("积分", "等级"));
+        dtFields.put("rows", java.util.Arrays.asList(row1, row2));
+        dtFields.put("defaultValue", "1");
+        cards.add(card("c3", "decisiontable", dtFields));
+        cards.add(card("c4", "return", fields("expr", "折扣")));
+
+        java.util.List<Map<String, Object>> sourceMap = new ArrayList<>();
+        sourceMap.add(span("c1", "call", 1, 1));
+        sourceMap.add(span("c2", "call", 2, 2));
+        sourceMap.add(span("c3", "decisiontable", 3, 11));
+        sourceMap.add(span("c4", "return", 12, 12));
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("cards", cards);
+        meta.put("cardSourceMap", sourceMap);
+        meta.put("contentHash", com.example.rulelog.util.ContentHash.hashContent(script));
+        return meta;
+    }
+
+    private Map<String, Object> card(String id, String type, Map<String, Object> fields) {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("id", id);
+        c.put("type", type);
+        c.putAll(fields);
+        return c;
+    }
+
+    /** 简易 key-value 构造（值成对传入） */
+    private Map<String, Object> fields(Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            m.put((String) kv[i], kv[i + 1]);
+        }
+        return m;
+    }
+
+    private Map<String, Object> span(String cardId, String type, int start, int end) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("cardId", cardId);
+        m.put("type", type);
+        m.put("startLine", start);
+        m.put("endLine", end);
+        m.put("empty", false);
+        return m;
     }
 }

@@ -55,13 +55,12 @@ class ScriptStoreTest {
     }
 
     @Test
-    void corruptFileIsBackedUpAndDefaultsLoaded() throws Exception {
-        Path file = tempDir.resolve("scripts.json");
+    void corruptFileIsBackedUpAndDefaultsLoaded() throws Exception {        Path file = tempDir.resolve("scripts.json");
         Files.write(file, "{坏掉的 json".getBytes(StandardCharsets.UTF_8));
 
         ScriptStore store = new ScriptStore(tempDir.toString());
-        // 损坏时回退到内置示例脚本，不崩溃
-        assertEquals(3, store.list().size());
+        // 损坏时回退到内置示例脚本，不崩溃（4 条：VIP/积分/带参/决策表）
+        assertEquals(4, store.list().size());
 
         try (java.util.stream.Stream<Path> files = Files.list(tempDir)) {
             List<Path> backups = files.filter(p -> p.getFileName().toString().startsWith("scripts.json.bak-"))
@@ -69,5 +68,22 @@ class ScriptStoreTest {
             assertEquals(1, backups.size(), "损坏文件应被备份");
             assertEquals("{坏掉的 json", new String(Files.readAllBytes(backups.get(0)), StandardCharsets.UTF_8));
         }
+    }
+
+    @Test
+    void decisionTableDemoHasValidMeta() {
+        ScriptStore store = new ScriptStore(tempDir.toString());
+        Script demo = store.get("decision_table_demo");
+        assertNotNull(demo, "应有决策表演示脚本");
+        java.util.Map<String, Object> meta = demo.getMeta();
+        assertNotNull(meta);
+        // meta 含 cards / contentHash / cardSourceMap
+        assertEquals(4, ((java.util.List<?>) meta.get("cards")).size());
+        assertEquals(com.example.rulelog.util.ContentHash.hashContent(demo.getContent()), meta.get("contentHash"),
+                "contentHash 必须匹配脚本文本，否则前端会把决策表卡重新解析成普通卡");
+        // 第三张卡是决策表
+        java.util.Map<?, ?> dtCard = (java.util.Map<?, ?>) ((java.util.List<?>) meta.get("cards")).get(2);
+        assertEquals("decisiontable", dtCard.get("type"));
+        assertEquals("first", dtCard.get("strategy"));
     }
 }
