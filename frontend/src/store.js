@@ -121,17 +121,21 @@ const submitLogin = async () => {
   }
   loggingIn.value = true;
   loginError.value = "";
-  // 先保存用户输入的凭据，重试时 writeRequest 会带上 Authorization 头
+  // 先保存用户输入的凭据
   auth.set(loginUser.value, loginPass.value);
   try {
-    if (pendingWrite) {
-      await pendingWrite(); // 带新凭据重试
-      pendingWrite = null;
-    }
+    // 关键：必须向后端真实校验凭据（/api/auth/status 需认证），
+    // 不能只靠重试 pendingWrite——它可能是纯前端动作（如进入编辑态），根本不发请求，
+    // 那样任何密码都会"成功"。
+    await requestJson(`${API}/auth/status`, {}, fetch, getApiToken());
+    // 凭据校验通过，再执行挂起的动作（进入编辑态 / 重试写请求）
+    const action = pendingWrite;
+    pendingWrite = null;
+    if (action) await action();
     showLoginDialog.value = false;
     notify("登录成功", "success");
   } catch (e) {
-    auth.clear(); // 凭据错误，清除
+    auth.clear(); // 凭据错误，清除，避免后续请求带上错误凭据
     loginError.value = e.status === 401 ? "账号或密码错误，请重试" : (e.message || "登录失败");
   } finally {
     loggingIn.value = false;
