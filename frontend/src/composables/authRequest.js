@@ -13,6 +13,24 @@ export const basicHeader = (username, password) =>
 export const isUnauthorized = (err) => !!err && err.status === 401;
 
 /**
+ * 校验凭据：用给定的 requestJson + auth 请求受保护接口。
+ * 抽成纯函数以便测试"校验必须携带认证头"这一关键行为。
+ * @param requestJson 请求函数
+ * @param auth 凭据对象（需有 headers()）
+ * @param url 受保护接口地址
+ * @returns true 凭据有效；false 凭据错误（401）
+ */
+export const verifyCredentials = async (requestJson, auth, url) => {
+  try {
+    await requestJson(url, { headers: auth.headers() });
+    return true;
+  } catch (e) {
+    if (isUnauthorized(e)) return false;
+    throw e; // 非 401（网络等）继续抛出
+  }
+};
+
+/**
  * 创建凭据状态闭包（存内存 + sessionStorage 可选持久化）。
  * @param {object} storage 可选的 Storage（测试可注入内存实现；默认 sessionStorage）
  */
