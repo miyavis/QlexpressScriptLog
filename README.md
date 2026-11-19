@@ -4,6 +4,8 @@
 [![Release](https://github.com/miyavis/QlexpressScriptLog/actions/workflows/release.yml/badge.svg)](https://github.com/miyavis/QlexpressScriptLog/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> **在线演示（Railway，一次性 Demo，数据可能随重启清空）：** [https://splendid-mercy-production-9282fdcf.up.railway.app](https://splendid-mercy-production-9282fdcf.up.railway.app)
+
 本项目演示如何在 QLExpress 4.1.3 规则执行过程中加入**可观测性**，面向业务人员：
 - 生产环境**事后查看**，不暂停程序、不需要断点/单步
 - 一条规则调用了哪些 Spring Service？Service 内部做了什么？日志全部可查
@@ -639,3 +641,16 @@ for each card in cards:
 - 后端执行与前端展示使用**同一脚本文本**（run 接口读取当前保存的脚本内容；执行记录内含快照）。
 - 卡片行区间是**生成期计数**，不是运行期猜测；同一卡片固定展开行数。
 - 修改卡片 → watch 自动重新生成脚本 + 重建映射；保存与执行永远使用同一份生成结果。
+
+---
+
+## 云端演示部署（Docker / Render / Railway）
+
+仓库根目录提供一套容器化部署文件，把前端构建产物内嵌进 Spring Boot Jar，单进程对外提供服务：
+
+- [`Dockerfile`](Dockerfile)：多阶段构建（Node 18 构建前端 → Gradle 打 Jar → JRE 17 运行），监听 Railway 注入的 `$PORT`
+- [`render.yaml`](render.yaml)：Render Blueprint（免费实例，健康检查 `/api/functions`）
+- [`.dockerignore`](.dockerignore)：排除构建产物、本地数据与 IDE 文件
+- [`DOCKER_DEPLOY.md`](DOCKER_DEPLOY.md)：Railway / Render 的部署步骤
+
+免费实例会休眠、重启后内存执行记录清空，仅适合演示；生产请自行接数据库并收紧安全策略。

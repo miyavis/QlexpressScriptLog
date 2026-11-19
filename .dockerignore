@@ -1,0 +1,15 @@
+# Build output and local caches
+.git
+.gradle
+build
+frontend/node_modules
+frontend/dist
+
+# Local runtime data and logs
+data
+*.log
+
+# IDE and OS files
+.idea
+.vscode
+.DS_Store
