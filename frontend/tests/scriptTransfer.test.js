@@ -35,6 +35,17 @@ describe("buildScriptExport（脚本 → 可分享 JSON）", () => {
     expect(obj.script.meta).toBeUndefined();
   });
 
+  it("meta.cases（场景用例）随导出/导入往返保留", () => {
+    const withCases = {
+      ...demoScript,
+      meta: { ...demoScript.meta, cases: [{ id: "c1", name: "VIP", paramsJson: '{"user":"张三"}' }] }
+    };
+    const exported = JSON.parse(buildScriptExport(withCases).body);
+    expect(exported.script.meta.cases).toHaveLength(1);
+    const req = parseScriptImport(JSON.stringify(exported));
+    expect(req.meta.cases[0].name).toBe("VIP");
+  });
+
   it("文件名含脚本名且时间戳合法", () => {
     const { filename } = buildScriptExport(demoScript);
     expect(filename).toMatch(/^规则脚本_打折规则_\d{8}-\d{6}\.json$/);

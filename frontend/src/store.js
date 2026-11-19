@@ -994,7 +994,8 @@ const exportCurrentScript = () => {
     const meta = {
       cards: cardsForMeta,
       cardSourceMap: genScriptFromCards(cardsForMeta).sourceMap,
-      contentHash: hashContent(form.content)
+      contentHash: hashContent(form.content),
+      cases: JSON.parse(JSON.stringify(testCases.value))
     };
     const { filename, body } = buildScriptExport({
       name: form.name,
