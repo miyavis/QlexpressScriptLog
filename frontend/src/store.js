@@ -23,6 +23,7 @@ import { buildVersionList, restoreVersion } from "./composables/versionHistory.j
 import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
+import { trimToasts } from "./composables/toast.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary, buildCondText, findCondVerdict } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
@@ -45,6 +46,20 @@ const EDITOR_LINE_HEIGHT = 22;
 const view = ref("scripts"); // 'scripts' | 'executions'
 const isRunning = ref(false); // 执行中：防重复提交，按钮可据此禁用
 const isRerunning = ref(false); // 历史重跑中：防重复提交
+
+/* ---------- Toast 通知（替代阻塞式 alert） ---------- */
+const toasts = ref([]);
+let toastTimer = 0;
+/** 弹出通知：type = success | error | warning | info；4 秒后自动消失 */
+const notify = (message, type = "info") => {
+  toastTimer += 1;
+  const id = toastTimer; // 用本地递增 id，避免与 makeToast.seq 冲突
+  toasts.value = trimToasts([...toasts.value, { id, message: String(message == null ? "" : message), type }]);
+  if (typeof setTimeout !== "undefined") {
+    setTimeout(() => { toasts.value = toasts.value.filter((t) => t.id !== id); }, 4000);
+  }
+};
+const dismissToast = (id) => { toasts.value = toasts.value.filter((t) => t.id !== id); };
 const callViewMode = ref("tree"); // 调用视图：'tree' 树形 | 'topo' 拓扑
 const topologyNodes = computed(() =>
   selectedRecord.value ? buildTopology(selectedRecord.value.calls) : []
@@ -518,7 +533,7 @@ const loadScripts = async () => {
   try {
     scripts.value = await requestJson(`${API}/scripts`, {}, fetch, getApiToken());
   } catch (e) {
-    alert("加载脚本列表失败：" + e.message);
+    notify("加载脚本列表失败：" + e.message, "error");
   }
 };
 
@@ -605,7 +620,7 @@ const saveScript = async (keepOpen = false) => {
   try {
     defaultParams = JSON.parse(form.defaultParamsJson || "{}");
   } catch (e) {
-    alert("默认参数不是合法的 JSON");
+    notify("默认参数不是合法的 JSON", "error");
     return;
   }
 
@@ -660,7 +675,7 @@ const saveScript = async (keepOpen = false) => {
       cancelEdit();
     }
   } catch (e) {
-    alert("保存脚本失败：" + e.message);
+    notify("保存脚本失败：" + e.message, "error");
   }
 };
 
@@ -673,14 +688,14 @@ const deleteScript = async (id) => {
       cancelEdit();
     }
   } catch (e) {
-    alert("删除失败：" + e.message);
+    notify("删除失败：" + e.message, "error");
   }
 };
 
 const runScript = async () => {
   if (isRunning.value) return; // 防重复提交
   if (!form.id) {
-    alert("请先选择或新建一个脚本");
+    notify("请先选择或新建一个脚本", "warning");
     return;
   }
   // 未保存提醒：未保存就执行会导致执行记录与脚本版本错位，事后排查会困惑
@@ -694,7 +709,7 @@ const runScript = async () => {
   try {
     params = JSON.parse(form.defaultParamsJson || "{}");
   } catch (e) {
-    alert("默认参数不是合法的 JSON");
+    notify("默认参数不是合法的 JSON", "error");
     return;
   }
   const scriptId = form.id;
@@ -711,7 +726,7 @@ const runScript = async () => {
     // 刷新该脚本的执行记录列表
     await loadScriptExecutions(scriptId);
   } catch (e) {
-    alert("执行脚本失败：" + e.message);
+    notify("执行脚本失败：" + e.message, "error");
   } finally {
     isRunning.value = false;
   }
@@ -723,7 +738,7 @@ const loadExecutions = async () => {
     // 后端上限 200（与 max-execution-records 一致），一次拉全，避免固定 100 漏掉更早记录
     executions.value = await requestJson(`${API}/executions?limit=200`, {}, fetch, getApiToken());
   } catch (e) {
-    alert("加载执行记录失败：" + e.message);
+    notify("加载执行记录失败：" + e.message, "error");
   }
 };
 
@@ -763,7 +778,7 @@ const downloadExecution = (record) => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert("导出失败：" + e);
+    notify("导出失败：" + e, "error");
   }
 };
 
@@ -800,9 +815,9 @@ const reviewAction = async (action) => {
     await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/review?action=${action}`,
       { method: "POST" }, fetch, getApiToken());
     await loadScripts();
-    alert(`已${labels[action] || action}。`);
+    notify(`已${labels[action] || action}。`, "success");
   } catch (e) {
-    alert("评审操作失败：" + e.message);
+    notify("评审操作失败：" + e.message, "error");
   }
 };
 
@@ -815,9 +830,9 @@ const switchBranch = async () => {
     await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/branch?name=${encodeURIComponent(name.trim())}`,
       { method: "POST" }, fetch, getApiToken());
     await loadScripts();
-    alert(`已切换到分支「${name.trim()}」。`);
+    notify(`已切换到分支「${name.trim()}」。`, "success");
   } catch (e) {
-    alert("切换分支失败：" + e.message);
+    notify("切换分支失败：" + e.message, "error");
   }
 };
 
@@ -830,9 +845,9 @@ const publishVersion = async (ver) => {
     await requestJson(`${API}/scripts/${encodeURIComponent(form.id)}/publish?versionNo=${no}`,
       { method: "POST" }, fetch, getApiToken());
     await loadScripts();
-    alert(`v${no} 已发布。`);
+    notify(`v${no} 已发布。`, "success");
   } catch (e) {
-    alert("发布失败：" + e.message);
+    notify("发布失败：" + e.message, "error");
   }
 };
 
@@ -841,7 +856,7 @@ const loadVersion = (ver) => {
   const cur = scripts.value.find((s) => s.id === form.id);
   const payload = restoreVersion(cur, ver);
   if (!payload) {
-    alert("该版本内容为空，无法载入");
+    notify("该版本内容为空，无法载入", "error");
     return;
   }
   if (hasUnsavedChanges.value && !confirm("当前有未保存的修改，载入历史版本会覆盖编辑器内容，继续吗？")) {
@@ -861,7 +876,7 @@ const loadVersion = (ver) => {
     canvasMode.value = false;
   }
   showHistory.value = false;
-  alert("已载入历史版本。检查无误后点击「保存」完成回滚；如不想要这次回滚，历史里也保留了回滚前的版本。");
+  notify("已载入历史版本。检查无误后点击「保存」完成回滚；如不想要这次回滚，历史里也保留了回滚前的版本。", "info");
 };
 
 /* ---------- 版本对比（载入前先看"当前 ↔ 该版本"差异） ---------- */
@@ -905,7 +920,7 @@ const visibleExecutions = computed(() =>
 /** 导出当前编辑中的脚本为 JSON 文件（含画布 meta，对方导入后画布布局原样可用） */
 const exportCurrentScript = () => {
   if (!form.content) {
-    alert("请先填写脚本内容再导出");
+    notify("请先填写脚本内容再导出", "warning");
     return;
   }
   try {
@@ -940,7 +955,7 @@ const exportCurrentScript = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert("导出失败：" + e);
+    notify("导出失败：" + e, "error");
   }
 };
 
@@ -953,7 +968,7 @@ const importScriptFromFile = async (ev) => {
     const text = await file.text();
     // 导入文件大小上限（与后端 100KB 脚本上限对齐，留一点余量给元数据）
     if (text.length > 200_000) {
-      alert("导入文件过大（超过 200KB），请检查内容");
+      notify("导入文件过大（超过 200KB），请检查内容", "error");
       return;
     }
     const req = parseScriptImport(text);
@@ -967,9 +982,9 @@ const importScriptFromFile = async (ev) => {
       const fresh = scripts.value.find((s) => s.id === created.id);
       if (fresh) selectScript(fresh);
     }
-    alert(`已导入脚本「${created.name}」`);
+    notify(`已导入脚本「${created.name}」`, "success");
   } catch (e) {
-    alert(String(e.message || e));
+    notify(String(e.message || e), "error");
   }
 };
 
@@ -992,9 +1007,9 @@ const rerunRecord = async (record) => {
       const found = executions.value.find((r) => r.traceId === fresh.traceId);
       selectExecution(found || fresh);
     }
-    alert("已用该记录的参数重新执行，结果见详情。");
+    notify("已用该记录的参数重新执行，结果见详情。", "success");
   } catch (e) {
-    alert("重跑失败：" + e.message);
+    notify("重跑失败：" + e.message, "error");
   } finally {
     isRerunning.value = false;
   }
@@ -1236,5 +1251,9 @@ export {
   knownVariables,
   duplicateCard,
   focusCardFirstInput,
-  goView
+  goView,
+  toasts,
+  notify,
+  dismissToast
 };
+

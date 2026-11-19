@@ -23,14 +23,16 @@
         <HelpPage v-else />
       </main>
       <footer class="app-footer">
-        后端 Spring Boot 2.7.18 + QLExpress 4.1.3 (JDK 8) · 前端 Vite 4 + Vue 3.4 · traceId 贯穿，实现脚本与日志一一对应
+        后端 Spring Boot 3.2 + QLExpress 4.1.4 (JDK 17) · 前端 Vite 4 + Vue 3.4 · traceId 贯穿，实现脚本与日志一一对应
       </footer>
     </div>
+    <ToastHost />
   </div>
 </template>
 
 <script setup>
 import { onMounted } from "vue";
+import ToastHost from "./components/ToastHost.vue";
 import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry } from "./store.js";
 import ScriptsPage from "./pages/ScriptsPage.vue";
 import ExecutionsPage from "./pages/ExecutionsPage.vue";
