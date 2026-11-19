@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 /**
  * 公开 Demo 的权限测试：读公开、执行公开、写需登录、审计仅管理员。
@@ -58,5 +59,15 @@ class SecurityRbacTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/audit").with(httpBasic("admin", "admin123")))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void unauthorizedResponseHasNoWwwAuthenticateHeader() throws Exception {
+        // 关键：401 绝不能带 WWW-Authenticate，否则浏览器弹原生登录框（绕过自定义登录 UI）
+        mvc.perform(post("/api/scripts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"x\",\"content\":\"返回 1;\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().doesNotExist("WWW-Authenticate"));
     }
 }

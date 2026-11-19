@@ -50,8 +50,24 @@ public class SecurityConfig {
                         // 读操作全部公开
                         .requestMatchers(HttpMethod.GET, "/api/**").permitAll()
                         .anyRequest().permitAll())
-                .httpBasic(basic -> { });
+                .httpBasic(basic -> basic.authenticationEntryPoint(NoBrowserPromptEntryPoint.INSTANCE))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(NoBrowserPromptEntryPoint.INSTANCE));
         return http.build();
+    }
+
+    /** 401 响应：纯 JSON，不带 WWW-Authenticate（避免浏览器弹原生登录框） */
+    private static final class NoBrowserPromptEntryPoint
+            implements org.springframework.security.web.AuthenticationEntryPoint {
+        static final NoBrowserPromptEntryPoint INSTANCE = new NoBrowserPromptEntryPoint();
+        @Override
+        public void commence(jakarta.servlet.http.HttpServletRequest request,
+                             jakarta.servlet.http.HttpServletResponse response,
+                             org.springframework.security.core.AuthenticationException authException)
+                throws java.io.IOException {
+            response.setStatus(401);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"message\":\"需要登录\"}");
+        }
     }
 
     @Bean
