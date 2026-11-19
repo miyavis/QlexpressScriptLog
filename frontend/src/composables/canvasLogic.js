@@ -6,6 +6,8 @@
  * meta 过期校验（contentHash）、if/else/end 结构校验。
  */
 
+import { genDecisionScript } from "./decisionTable.js";
+
 export const CARD_FUNCS = ["查询用户等级", "查询用户积分", "计算折扣"];
 export const CARD_OPS = ["等于", "不等于", "大于", "小于", "大于等于", "小于等于"];
 
@@ -21,6 +23,10 @@ export const newCard = (type) => {
   if (type === "calc" || type === "return") card.expr = "";
   if (type === "log") Object.assign(card, { title: "", exprRaw: "" });
   if (type === "if") Object.assign(card, { left: "", op: "大于", right: "" });
+  if (type === "decisiontable") Object.assign(card, {
+    strategy: "first", resultVar: "结果", conditions: ["条件1", "条件2"],
+    rows: [{ cells: ["", ""], result: "" }], defaultValue: "0"
+  });
   if (type === "text") card.raw = "";
   return card;
 };
@@ -64,6 +70,16 @@ export const genScriptFromCards = (cards) => {
       texts.push("}");
     } else if (c.type === "return") {
       texts.push(`返回 ${sanitizeExpr(c.expr || 0)};`);
+    } else if (c.type === "decisiontable") {
+      // 决策表展开为多行脚本（嵌套如果/否则）
+      const table = {
+        strategy: c.strategy, resultVar: c.resultVar, conditions: c.conditions,
+        rows: c.rows, defaultValue: c.defaultValue
+      };
+      const script = genDecisionScript(table);
+      for (const line of script.split("\n")) {
+        texts.push(line);
+      }
     } else if (c.type === "text") {
       texts.push(String(c.raw || "").replace(/\r?\n/g, " "));
     }

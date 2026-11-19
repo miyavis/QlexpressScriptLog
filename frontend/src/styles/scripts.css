@@ -302,6 +302,7 @@
 .canvas-card.t-log { border-left-color: #10b981; }
 .canvas-card.t-if, .canvas-card.t-else, .canvas-card.t-end { border-left-color: #f59e0b; }
 .canvas-card.t-return { border-left-color: #6366f1; }
+.canvas-card.t-decision { border-left-color: #0d9488; background: #f0fdfa; }
 .canvas-card.t-text { border-left-color: #94a3b8; background: #fafafa; }
 .canvas-card:hover { background: #f6f8fd; box-shadow: var(--shadow-card); }
 .canvas-card.sel { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px rgba(67, 83, 201, 0.15); }
@@ -329,6 +330,14 @@
 .card-fields select.card-input { width: auto; min-width: 110px; }
 .card-none { font-size: 11px; color: var(--ink-400); font-style: italic; }
 .canvas-dropzone { border: 1px dashed var(--ink-300); border-radius: var(--r-md); padding: 12px; text-align: center; font-size: 11.5px; color: var(--ink-400); background: rgba(255, 255, 255, 0.5); }
+
+/* 决策表编辑器 */
+.decision-config { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.decision-config label { font-size: 11px; color: var(--ink-500); display: flex; align-items: center; gap: 4px; }
+.decision-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.decision-table th, .decision-table td { border: 1px solid var(--ink-200); padding: 2px; }
+.decision-table th .card-input, .decision-table td .card-input { width: 100%; min-width: 60px; font-size: 11px; }
+.decision-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 
 .gen-preview { margin-top: 8px; border: 1px solid var(--ink-200); border-radius: var(--r-md); background: var(--ink-50); padding: 6px 10px; flex: none; }
 .gen-preview summary { cursor: pointer; font-size: 11.5px; color: var(--ink-500); user-select: none; }

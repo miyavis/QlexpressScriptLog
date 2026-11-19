@@ -220,6 +220,41 @@
                             <label>结果存入<input v-model="c.varName" class="card-input" placeholder="积分" /></label>
                             <span class="card-none">此卡片生成两行：参数定义行 + 服务调用行</span>
                           </template>
+                          <template v-else-if="c.type === 'decisiontable'">
+                            <div class="decision-config">
+                              <label>命中策略
+                                <select v-model="c.strategy" class="card-input">
+                                  <option value="first">First（首个命中）</option>
+                                  <option value="collect">Collect（累加）</option>
+                                </select>
+                              </label>
+                              <label>结果变量<input v-model="c.resultVar" class="card-input" placeholder="结果" /></label>
+                              <label>默认值<input v-model="c.defaultValue" class="card-input" placeholder="0" /></label>
+                            </div>
+                            <table class="decision-table">
+                              <thead><tr>
+                                <th v-for="(cond, ci) in c.conditions" :key="'h'+ci">
+                                  <input v-model="c.conditions[ci]" class="card-input" placeholder="变量名" list="known-vars" />
+                                </th>
+                                <th>结果</th>
+                                <th></th>
+                              </tr></thead>
+                              <tbody>
+                                <tr v-for="(row, ri) in c.rows" :key="'r'+ri">
+                                  <td v-for="(cell, ci) in row.cells" :key="'c'+ci">
+                                    <input v-model="row.cells[ci]" class="card-input" placeholder="> 100" />
+                                  </td>
+                                  <td><input v-model="row.result" class="card-input" placeholder="0.8" /></td>
+                                  <td><button class="card-btn danger" @click="c.rows.splice(ri, 1)" title="删除行">✕</button></td>
+                                </tr>
+                              </tbody>
+                            </table>
+                            <div class="decision-actions">
+                              <button class="btn-secondary sm" @click="addDecisionRow(c)">+ 加行</button>
+                              <button class="btn-secondary sm" @click="addDecisionColumn(c)">+ 加列</button>
+                              <span class="card-none">生成脚本会展开为如果/否则，回画布将显示为普通卡片</span>
+                            </div>
+                          </template>
                           <template v-else-if="c.type === 'calc'">
                             <label>变量<input v-model="c.varName" class="card-input" placeholder="打折积分" /></label>
                             <label>表达式<input v-model="c.expr" class="card-input wide" placeholder="积分 * 2" list="known-vars" /></label>
@@ -566,6 +601,8 @@ import {
   publishVersion,
   reviewAction,
   switchBranch,
+  addDecisionRow,
+  addDecisionColumn,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,

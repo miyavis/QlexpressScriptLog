@@ -340,6 +340,7 @@ const CARD_TYPES = [
   { type: "else", label: "否则卡", icon: "🔀", hint: "} 否则 {" },
   { type: "end", label: "结束卡", icon: "🔚", hint: "}" },
   { type: "return", label: "返回卡", icon: "🎯", hint: "返回 表达式" },
+  { type: "decisiontable", label: "决策表", icon: "▦", hint: "表格化规则（First/Collect 命中）" },
   { type: "text", label: "原样卡", icon: "📄", hint: "保留脚本原文（高级语法用）" }
 ];
 
@@ -452,6 +453,7 @@ const TYPE_META = {
   else: { icon: "🔀", label: "否则", cls: "t-else" },
   end: { icon: "🔚", label: "结束", cls: "t-end" },
   return: { icon: "🎯", label: "返回", cls: "t-return" },
+  decisiontable: { icon: "▦", label: "决策表", cls: "t-decision" },
   text: { icon: "📄", label: "原样", cls: "t-text" }
 };
 const cardIcon = (type) => (TYPE_META[type] || {}).icon || "▢";
@@ -465,6 +467,7 @@ const cardTitle = (c) => {
   if (c.type === "else") return "否则";
   if (c.type === "end") return "条件块结束";
   if (c.type === "return") return `返回 · ${c.expr || "?"}`;
+  if (c.type === "decisiontable") return `决策表 · ${c.resultVar || "结果"}（${(c.rows || []).length} 行）`;
   if (c.type === "text") return `原样 · ${String(c.raw || "").slice(0, 18) || "?"}`;
   return "";
 };
@@ -1063,6 +1066,20 @@ const knownVariables = computed(() =>
   collectKnownVariables(canvasCards.value, scriptParamKeys.value)
 );
 
+/** 决策表：加一行（列数与 conditions 对齐） */
+const addDecisionRow = (card) => {
+  if (!card) return;
+  card.rows.push({ cells: (card.conditions || []).map(() => ""), result: "" });
+};
+/** 决策表：加一列（条件 + 所有行补一个空格子） */
+const addDecisionColumn = (card) => {
+  if (!card) return;
+  card.conditions.push("新条件");
+  for (const row of card.rows || []) {
+    row.cells.push("");
+  }
+};
+
 /** 复制卡片（含内容），插到当前卡片之后 */
 const duplicateCard = (idx) => {
   const src = canvasCards.value[idx];
@@ -1188,6 +1205,8 @@ export {
   publishVersion,
   reviewAction,
   switchBranch,
+  addDecisionRow,
+  addDecisionColumn,
   diffVerIndex,
   toggleDiff,
   savedContentOfCurrent,
