@@ -125,18 +125,25 @@ public class RuleExecutionService {
             // errorMessage 存中文摘要（第几行/什么错/出错行内容），原始英文信息保留在摘要尾部供开发排查
             record.setErrorMessage(ErrorSummarizer.summarize(e, splitLines(script.getContent())).detail);
         } finally {
+            // ① 采集并聚合日志（StepLogger 采集器必须先于 ThreadLocal 清理）
             StepLogger.Collector collector = StepLogger.drainAndRemove();
             record.setCalls(collector.getRootCalls());
             record.setRootSteps(collector.getRootSteps());
-            // 将调用/步骤按脚本行号分组，用于前端“每一行脚本对应的日志”展示
             groupLogsByLine(record, qlResult, script.getContent());
             record.setEndTime(System.currentTimeMillis());
             record.setDurationMs(Math.max(0, record.getEndTime() - record.getStartTime()));
-            // OTel：把调用/步骤导出为 span/event（在清理 traceId 前，ID 生成器还需要它）
-            otel.exportRecord(record, otelRoot);
-            otel.endExecution(otelRoot, record.isSuccess(), record.getErrorMessage());
-            RuleTraceContext.clear();
-            recordStore.save(record);
+            // ② OTel 导出是"尽力而为"：collector 不可达等异常绝不能吞掉执行记录或泄漏 ThreadLocal
+            try {
+                otel.exportRecord(record, otelRoot);
+                otel.endExecution(otelRoot, record.isSuccess(), record.getErrorMessage());
+            } catch (Exception otelEx) {
+                org.slf4j.LoggerFactory.getLogger(RuleExecutionService.class)
+                        .warn("OTel 导出失败（不影响执行记录）: {}", otelEx.getMessage());
+                otel.safeClear(); // 确保 IdGenerator 的 ThreadLocal 也被清理
+            } finally {
+                RuleTraceContext.clear();
+                recordStore.save(record); // 无论 OTel 成败，执行记录都要落盘
+            }
         }
         return record;
     }

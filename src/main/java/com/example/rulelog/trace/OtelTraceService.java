@@ -111,6 +111,11 @@ public class OtelTraceService {
         idGenerator.clear();
     }
 
+    /** 异常兜底：单独清理 ID 生成器的 ThreadLocal（幂等，可重复调用） */
+    public void safeClear() {
+        idGenerator.clear();
+    }
+
     /** 记录一个服务调用为 child span（递归处理子调用），span 起止用 ServiceCallLog 记录的真实时间 */
     public void recordCall(Context parentContext, ServiceCallLog call) {
         if (call == null) return;
