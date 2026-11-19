@@ -36,6 +36,31 @@ export const callArgs = (call) => {
 };
 
 /**
+ * 从脚本快照的指定行截取「如果(...)」里的条件文本。
+ * @param {string} scriptSnapshot 脚本文本
+ * @param {number|null} ifLine 如果所在行号（1-based）
+ */
+export const buildCondText = (scriptSnapshot, ifLine) => {
+  if (ifLine == null || !scriptSnapshot) return "";
+  const line = (scriptSnapshot.split("\n")[ifLine - 1] || "").trim();
+  const m = line.match(/如果\s*[（(](.*)[）)]/);
+  if (m) return m[1].trim();
+  const start = line.indexOf("如果");
+  const end = line.indexOf("则", start);
+  const body = line.substring(start + 2, end > start ? end : line.length);
+  return body.replace(/^[（(]+|[）)]+$/g, "").trim();
+};
+
+/** 从如果行的表达式轨迹中找出已求值的布尔运算符结果（条件判定） */
+export const findCondVerdict = (lineExecutions, ifLine) => {
+  if (ifLine == null || !lineExecutions) return null;
+  const le = lineExecutions[ifLine];
+  if (!le || !le.expressions) return null;
+  const cmp = le.expressions.find(e => e && e.type === "OPERATOR" && typeof e.value === "boolean" && e.evaluated);
+  return cmp ? cmp.value : null;
+};
+
+/**
  * 构建执行摘要：从执行记录聚合调用/步骤/表达式数量、失败数、去重名称（纯函数）。
  * @param {object} record RuleExecutionRecord
  * @returns 摘要对象；record 为空返回 null

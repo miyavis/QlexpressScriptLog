@@ -23,7 +23,7 @@ import { buildVersionList, restoreVersion } from "./composables/versionHistory.j
 import { diffLines, renderDiffRows } from "./composables/diffPreview.js";
 import { filterScripts, filterExecutions } from "./composables/listFilters.js";
 import { requestJson } from "./composables/apiClient.js";
-import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary } from "./composables/logPresentation.js";
+import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary, buildCondText, findCondVerdict } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
 
@@ -167,28 +167,20 @@ const branchChip = (le) => {
   return b === "then" ? "则分支" : b === "else" ? "否则分支" : null;
 };
 
-/** 条件文本：从脚本第 ifLine 行截取 如果(...) 里的内容 */
-const condText = computed(() => {
-  if (branchInfo.value.ifLine == null) return "";
-  const snap = (selectedLogRecord.value && selectedLogRecord.value.scriptSnapshot) || "";
-  const line = (snap.split("\n")[branchInfo.value.ifLine - 1] || "").trim();
-  const m = line.match(/如果\s*[（(](.*)[）)]/);
-  if (m) return m[1].trim();
-  const start = line.indexOf("如果");
-  const end = line.indexOf("则", start);
-  const body = line.substring(start + 2, end > start ? end : line.length);
-  return body.replace(/^[（(]+|[）)]+$/g, "").trim();
-});
+/** 条件文本：从脚本第 ifLine 行截取 如果(...) 里的内容（纯逻辑在 logPresentation.js） */
+const condText = computed(() =>
+  buildCondText(
+    selectedLogRecord.value ? selectedLogRecord.value.scriptSnapshot : "",
+    branchInfo.value.ifLine
+  )
+);
 
-/** 条件判断结果：取如果行里求过值的布尔运算符 */
-const condVerdict = computed(() => {
-  const ifLine = branchInfo.value.ifLine;
-  if (ifLine == null || !selectedLogRecord.value) return null;
-  const le = (selectedLogRecord.value.lineExecutions || {})[ifLine];
-  if (!le || !le.expressions) return null;
-  const cmp = le.expressions.find(e => e && e.type === "OPERATOR" && typeof e.value === "boolean" && e.evaluated);
-  return cmp ? cmp.value : null;
-});
+/** 条件判断结果：取如果行里求过值的布尔运算符（纯逻辑在 logPresentation.js） */
+const condVerdict = computed(() =>
+  selectedLogRecord.value
+    ? findCondVerdict(selectedLogRecord.value.lineExecutions, branchInfo.value.ifLine)
+    : null
+);
 
 /** 未走分支时的说明文字 */
 const notTakenText = (le) => {
