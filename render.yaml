@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: qlexpress-script-log
+    runtime: java
+    plan: free
+    buildCommand: chmod +x ./gradlew && ./gradlew buildFrontend bootJar --no-daemon
+    startCommand: java -Dfile.encoding=UTF-8 -Dserver.port=$PORT -jar build/libs/rule-log-1.0.0.jar
+    healthCheckPath: /api/functions
+    envVars:
+      - key: JAVA_TOOL_OPTIONS
+        value: -Xms128m -Xmx384m
