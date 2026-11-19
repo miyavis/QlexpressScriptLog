@@ -1,7 +1,7 @@
 name: Release
 
 # 打 tag（v1.0.0 这样的格式）即自动：构建前端 → 构建 jar → 发布 GitHub Release 并附上 jar
-# 服务器部署：从 Release 下载 jar，java -jar rule-log-1.0.0.jar 即可（jar 已内嵌前端页面）
+# 服务器部署：从 Release 下载 jar，java -jar rule-log-1.1.0.jar 即可（jar 已内嵌前端页面）
 on:
   push:
     tags:
@@ -47,4 +47,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/libs/*.jar
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md

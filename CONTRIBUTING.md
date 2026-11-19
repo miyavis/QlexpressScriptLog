@@ -4,7 +4,7 @@
 
 ## 开发环境
 
-- JDK 8（构建用 Gradle Wrapper 7.6.4，无需本机安装 Gradle）
+- JDK 17（Spring Boot 3.2，构建用 Gradle Wrapper 7.6.4，无需本机安装 Gradle）
 - Node.js 16+ + npm
 
 ## 本地开发

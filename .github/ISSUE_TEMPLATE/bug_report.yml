@@ -38,6 +38,6 @@ body:
     id: version
     attributes:
       label: 运行方式与版本
-      placeholder: 例：单 jar v1.0.0（java -Dfile.encoding=UTF-8 -jar rule-log-1.0.0.jar）
+      placeholder: 例：单 jar v1.1.0（java -Dfile.encoding=UTF-8 -jar rule-log-1.1.0.jar）
     validations:
       required: true

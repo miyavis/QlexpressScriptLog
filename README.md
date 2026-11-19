@@ -187,7 +187,7 @@ npm run dev
 
 ```bash
 ./gradlew buildFrontend bootJar    # 一条命令：构建前端 dist → 内嵌进 jar
-java -Dfile.encoding=UTF-8 -jar build/libs/rule-log-1.0.0.jar
+java -Dfile.encoding=UTF-8 -jar build/libs/rule-log-1.1.0.jar
 ```
 
 （也可先 `cd frontend && npm run build`，再 `./gradlew bootJar`——dist 已存在时 bootJar 直接内嵌，不存在时打纯 API jar，构建不报错。）
@@ -201,17 +201,17 @@ java -Dfile.encoding=UTF-8 -jar build/libs/rule-log-1.0.0.jar
 | 工作流 | 触发 | 做什么 |
 |--------|------|--------|
 | **ci.yml** | 每次 push / PR | 后端单测（JDK 17 + Gradle）、前端单测与构建（Node 18），并行两个 job |
-| **release.yml** | 推送 `v*` 标签（如 `v1.0.0`），或在 Actions 页手动触发 | 前后端全量单测 → 构建前端 → 打单 jar → **发布 GitHub Release 并附上 jar** |
+| **release.yml** | 推送 `v*` 标签（如 `v1.1.0`），或在 Actions 页手动触发 | 前后端全量单测 → 构建前端 → 打单 jar → **发布 GitHub Release 并附上 jar** |
 
 **发版三步**：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
-# → Actions 自动构建，几分钟后 GitHub Releases 页出现 rule-log-1.0.0.jar
+git tag v1.1.0
+git push origin v1.1.0
+# → Actions 自动构建，几分钟后 GitHub Releases 页出现 rule-log-1.1.0.jar
 ```
 
-**服务器部署**：从 GitHub Releases 下载 jar → 拷到服务器 → `java -Dfile.encoding=UTF-8 -jar rule-log-1.0.0.jar`（需 JRE 8+）。`data/` 目录会自动生成在 jar 旁边。也可以注册成 systemd 服务或用 `nohup` 后台运行。
+**服务器部署**：从 GitHub Releases 下载 jar → 拷到服务器 → `java -Dfile.encoding=UTF-8 -jar rule-log-1.1.0.jar`（需 JRE 17+）。`data/` 目录会自动生成在 jar 旁边。也可以注册成 systemd 服务或用 `nohup` 后台运行。
 
 ---
 
