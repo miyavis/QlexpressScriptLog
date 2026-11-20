@@ -24,7 +24,8 @@ describe("store.js（页面共享状态单例）", () => {
       "loadScripts", "loadExecutions", "loadFunctionRegistry",
       "selectScript", "newScript", "saveScript", "runScript", "deleteScript",
       "importScriptFromFile", "exportCurrentScript",
-      "selectExecution", "enterCanvas", "addCard", "moveCard", "duplicateCard"
+      "selectExecution", "enterCanvas", "addCard", "moveCard", "duplicateCard",
+      "logout", "openLogin", "submitLogin", "cancelLogin"  // 认证动作（含退出登录）
     ];
     for (const a of actions) {
       expect(typeof store[a], `导出 ${a}`).toBe("function");
@@ -34,7 +35,8 @@ describe("store.js（页面共享状态单例）", () => {
   it("页面模板需要的计算属性与数据都已导出", () => {
     const computedAndData = [
       "visibleScripts", "visibleExecutions", "scriptKeyword", "execKeyword", "execStatus",
-      "historyVersions", "registryFunctions", "CARD_TYPES", "form", "scriptLines", "canvasCards"
+      "historyVersions", "registryFunctions", "CARD_TYPES", "form", "scriptLines", "canvasCards",
+      "isLoggedIn", "currentUsername"  // 侧边栏登录状态
     ];
     for (const k of computedAndData) {
       expect(store[k], `导出 ${k}`).toBeDefined();

@@ -14,7 +14,14 @@
         <button :class="{ active: view === 'executions' }" @click="goView('executions')"><span class="nav-ico">📊</span>执行记录<span class="nav-badge">{{ executions.length }}</span></button>
         <button :class="{ active: view === 'help' }" @click="goView('help')"><span class="nav-ico">❓</span>使用帮助</button>
       </nav>
-      <div class="nav-foot">JDK 8 · Spring Boot 2.7.18<br />Vite 4 · Vue 3.4</div>
+      <div class="nav-auth">
+        <template v-if="isLoggedIn">
+          <span class="nav-user" :title="'当前登录：' + currentUsername">👤 {{ currentUsername }}</span>
+          <button class="nav-logout" @click="logout" title="退出登录">退出</button>
+        </template>
+        <button v-else class="nav-login" @click="openLogin" title="登录以执行写操作">🔐 登录</button>
+      </div>
+      <div class="nav-foot">JDK 17 · Spring Boot 3.2<br />QLExpress 4.1.4 · Vite 4</div>
     </aside>
     <div class="app-body">
       <main class="app-main">
@@ -35,7 +42,7 @@
 import { onMounted } from "vue";
 import ToastHost from "./components/ToastHost.vue";
 import LoginDialog from "./components/LoginDialog.vue";
-import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry } from "./store.js";
+import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry, isLoggedIn, currentUsername, logout, openLogin } from "./store.js";
 import ScriptsPage from "./pages/ScriptsPage.vue";
 import ExecutionsPage from "./pages/ExecutionsPage.vue";
 import HelpPage from "./pages/HelpPage.vue";

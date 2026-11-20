@@ -26,7 +26,12 @@
 .nav-ico { font-size: 15px; width: 20px; text-align: center; }
 .nav-badge { margin-left: auto; font-size: 11px; background: rgba(255, 255, 255, 0.07); color: #aab1c4; border-radius: 9px; padding: 1px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .nav-menu button.active .nav-badge { background: rgba(255, 255, 255, 0.16); color: #fff; }
-.nav-foot { margin-top: auto; font-size: 10.5px; color: #565d6e; line-height: 1.8; padding: 0 8px; letter-spacing: 0.3px; }
+.nav-auth { margin-top: auto; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,0.07); }
+.nav-user { flex: 1; font-size: 12px; color: #c7ccda; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-logout, .nav-login { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #c7ccda; border-radius: 7px; padding: 5px 10px; font-size: 11.5px; cursor: pointer; white-space: nowrap; flex: none; }
+.nav-logout:hover, .nav-login:hover { background: rgba(255,255,255,0.14); color: #fff; }
+.nav-login { width: 100%; text-align: center; }
+.nav-foot { font-size: 10.5px; color: #565d6e; line-height: 1.8; padding: 0 8px; letter-spacing: 0.3px; }
 .app-body { flex: 1; display: flex; flex-direction: column; min-width: 0; max-width: 1500px; }
 .app-main { display: flex; gap: 18px; padding: 24px 28px 18px; flex: 1; }
 .app-footer { padding: 16px 0; font-size: 11.5px; color: var(--ink-400); text-align: center; border-top: 1px solid var(--ink-200); margin-top: auto; letter-spacing: 0.2px; }

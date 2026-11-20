@@ -69,6 +69,8 @@ const dismissToast = (id) => { toasts.value = toasts.value.filter((t) => t.id !=
 
 /* ---------- 认证（读公开、写需登录） ---------- */
 const auth = createAuth();
+const isLoggedIn = ref(auth.hasCredentials());       // 登录态镜像（auth 本身非响应式）
+const currentUsername = ref(auth.get()?.username || ""); // 当前用户名，供侧边栏显示
 const showLoginDialog = ref(false);
 const loginReason = ref("");
 const loginUser = ref("admin");
@@ -130,6 +132,8 @@ const submitLogin = async () => {
       auth, `${API}/auth/status`);
     if (!ok) {
       auth.clear();
+      isLoggedIn.value = false;
+      currentUsername.value = "";
       loginError.value = "账号或密码错误，请重试";
       return;
     }
@@ -137,14 +141,35 @@ const submitLogin = async () => {
     const action = pendingWrite;
     pendingWrite = null;
     if (action) await action();
+    isLoggedIn.value = true;
+    currentUsername.value = loginUser.value;
     showLoginDialog.value = false;
     notify("登录成功", "success");
   } catch (e) {
     auth.clear();
+    isLoggedIn.value = false;
+    currentUsername.value = "";
     loginError.value = e.message || "登录失败";
   } finally {
     loggingIn.value = false;
   }
+};
+
+/** 主动打开登录框（侧边栏「登录」按钮） */
+const openLogin = () => {
+  loginReason.value = "登录后可新建 / 修改脚本、评审、发布等写操作。";
+  loginError.value = "";
+  pendingWrite = null;
+  showLoginDialog.value = true;
+};
+
+/** 退出登录：清凭据、重置登录态镜像 */
+const logout = () => {
+  auth.clear();
+  isLoggedIn.value = false;
+  currentUsername.value = "";
+  pendingWrite = null;
+  notify("已退出登录", "info");
 };
 
 const cancelLogin = () => {
@@ -1487,6 +1512,10 @@ export {
   loggingIn,
   submitLogin,
   cancelLogin,
+  isLoggedIn,
+  currentUsername,
+  logout,
+  openLogin,
   canUndoCards,
   canRedoCards,
   undoCards,
