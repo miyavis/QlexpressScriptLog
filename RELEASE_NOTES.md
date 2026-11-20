@@ -3,17 +3,15 @@
 > 本文件只写**本次发版新增**的内容（增量格式）。历史版本正文见 [GitHub Releases](https://github.com/miyavis/QlexpressScriptLog/releases)。
 > 发版流程：更新本文件 → `git tag vX.Y.Z` → `git push origin vX.Y.Z`，CI 读取本文件作为 Release 正文。
 
-## 本次发版（v1.1.4）
+## 本次发版（v1.1.5）
 
-修复 v1.1.3 认证弹窗体验问题。
+### ✨ 新增功能
 
-### 🐛 修复
-
-- **浏览器原生登录框问题**：Spring Security 的 `httpBasic()` 默认在 401 响应里带 `WWW-Authenticate: Basic` 头，导致浏览器弹出原生登录对话框（即截图里"此网站要求您登录"），绕过我们自己的登录弹窗，且连续失败会触发浏览器/IP 临时锁定。现自定义 401 响应（纯 JSON、不带该头），前端统一用自己的登录框；补测试断言 401 响应不含 `WWW-Authenticate`。
+- **退出登录 / 登录入口**：侧边栏底部新增认证区——已登录显示当前用户名 + 「退出」按钮，未登录显示「🔐 登录」按钮。退出时清空会话凭据与登录态；登录成功自动更新用户名显示。
 
 ### 📦 部署
 
-下载 `rule-log-1.1.4.jar`（已内嵌前端），`java -jar rule-log-1.1.4.jar` 即可，需 JRE 17+。默认写鉴权，本地可用 `-Dapp.security.enabled=false` 免登录。
+下载 `rule-log-1.1.5.jar`（已内嵌前端），`java -jar rule-log-1.1.5.jar` 即可，需 JRE 17+。默认写鉴权，本地可用 `-Dapp.security.enabled=false` 免登录。
 
 在线演示：https://qlexpress-script-log-production.up.railway.app
 
@@ -21,17 +19,21 @@
 
 ## 历史版本
 
+### v1.1.4（2026-11-19）
+
+401 不带 WWW-Authenticate 头，杜绝浏览器原生登录框。
+
 ### v1.1.3（2026-11-19）
 
-修复登录体验：点新建即探测写权限弹登录框（`/api/auth/status`）；登录用 `verifyCredentials` 携带 Basic 头真实校验密码，错误密码被拒。
+修复登录体验：点新建即探测写权限弹登录框；登录用 verifyCredentials 携带 Basic 头真实校验密码。
 
 ### v1.1.2（2026-11-19）
 
-读公开、写需登录：GET 与执行类接口公开，增删改/评审/发布/分支/清空需认证，审计仅管理员；前端 401 弹登录框并重试。
+读公开、写需登录：GET 与执行类接口公开，增删改/评审/发布/分支/清空需认证，审计仅管理员。
 
 ### v1.1.1（2026-11-19）
 
-修复 v1.1.0 发布 jar 缺前端；OTel 导出失败不吞记录；RBAC viewer 权限修正；脚本深拷贝；导出保留场景用例；首屏加载态、键盘可达性、清空执行记录。
+修复 v1.1.0 发布 jar 缺前端；OTel 韧性；RBAC viewer 权限；深拷贝；场景用例导出；加载态、键盘可达性、清空执行记录。
 
 ### v1.1.0（2026-11-19）
 
