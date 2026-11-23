@@ -1,7 +1,7 @@
 name: Release
 
 # 打 tag（v1.0.0 这样的格式）即自动：构建前端 → 构建 jar → 发布 GitHub Release 并附上 jar
-# 服务器部署：从 Release 下载 jar，java -jar rule-log-1.1.0.jar 即可（jar 已内嵌前端页面）
+# 服务器部署：从 Release 下载 jar，java -jar rule-log-1.1.6.jar 即可（jar 已内嵌前端页面）
 on:
   push:
     tags:
@@ -40,12 +40,12 @@ jobs:
         run: ./gradlew test --no-daemon
 
       - name: 构建单 jar（前端 dist 内嵌）
-        run: ./gradlew bootJar --no-daemon
+        run: ./gradlew :rulelog-platform:bootJar --no-daemon
 
       - name: 校验 jar 已内嵌前端页面
         run: |
           set -e
-          JAR=$(ls build/libs/rule-log-*.jar | head -1)
+          JAR=$(ls rulelog-platform/build/libs/rule-log-*.jar | head -1)
           echo "Checking $JAR"
           unzip -l "$JAR" | grep -q 'BOOT-INF/classes/static/index.html' || { echo "ERROR: jar 缺少前端 index.html"; exit 1; }
           echo "OK: 前端页面已内嵌"
@@ -54,5 +54,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/libs/*.jar
+          files: rulelog-platform/build/libs/rule-log-*.jar
           body_path: RELEASE_NOTES.md

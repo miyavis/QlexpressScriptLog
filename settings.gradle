@@ -1,1 +1,5 @@
 rootProject.name = 'rule-log'
+
+// 多模块：core 为无 Spring 的纯 Java 规则引擎内核（SDK 主体），platform 为 Spring Boot 应用
+include 'rulelog-core'
+include 'rulelog-platform'

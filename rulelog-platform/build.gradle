@@ -1,0 +1,71 @@
+/*
+ * rulelog-platform：Spring Boot 应用（Controller / 服务 / 存储 / 安全 / 前端）。
+ * 依赖 rulelog-core（纯 Java 内核）。
+ */
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.12'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.example'
+version = '1.1.6'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    // 依赖无 Spring 内核
+    implementation project(':rulelog-core')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'io.opentelemetry:opentelemetry-api'
+    implementation 'io.opentelemetry:opentelemetry-sdk'
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+    implementation 'com.h2database:h2'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}
+
+// ---------- 前端构建 ----------
+tasks.register('buildFrontend', Exec) {
+    group = 'build'
+    workingDir = rootProject.file('frontend')
+    if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+        commandLine 'cmd', '/c', 'npm', 'run', 'build'
+    } else {
+        commandLine 'npm', 'run', 'build'
+    }
+}
+
+tasks.register('copyFrontendDist', Copy) {
+    group = 'build'
+    from rootProject.layout.projectDirectory.dir('frontend/dist')
+    into layout.buildDirectory.dir('bootJarStatic')
+    onlyIf { rootProject.file('frontend/dist').exists() }
+}
+
+tasks.named('bootJar') {
+    dependsOn tasks.named('copyFrontendDist')
+    archiveBaseName = 'rule-log'   // 对外 jar 名保持 rule-log-1.1.6.jar
+    from(layout.buildDirectory.dir('bootJarStatic')) {
+        into 'BOOT-INF/classes/static'
+    }
+}
+
+tasks.named('bootRun') {
+    jvmArgs = ['-Dfile.encoding=UTF-8', '-Dsun.jnu.encoding=UTF-8']
+}

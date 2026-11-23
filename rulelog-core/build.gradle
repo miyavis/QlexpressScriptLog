@@ -1,0 +1,32 @@
+/*
+ * rulelog-core：无 Spring 的纯 Java 规则引擎内核。
+ * 可作为 SDK 被外部项目通过 Maven/Gradle 引入。
+ * 包名与 platform 一致（com.example.rulelog.*），避免大量 import 修改。
+ */
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    // Jackson：序列化工具（api 暴露，SDK 用户需要）
+    api 'com.fasterxml.jackson.core:jackson-databind:2.15.4'
+    // QLExpress4：规则引擎（api 暴露，SDK 用户直接用）
+    api 'com.alibaba:qlexpress4:4.1.4'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+}

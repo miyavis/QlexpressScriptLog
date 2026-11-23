@@ -1,93 +1,20 @@
 /*
- * QLExpress4 规则脚本执行平台（附全链路执行日志）
- *
- * 栈：JDK 17 + Spring Boot 3.2.x + QLExpress 4.1.3（零第三方业务依赖）
- * 单 jar 部署：先构建前端（gradlew buildFrontend 或 npm run build），
- * dist 会内嵌进 jar 的 BOOT-INF/classes/static，一个 jar 同时提供 API 与页面。
+ * 根项目：子模块聚合 + 便捷任务转发（保持原有命令可用）。
  */
-plugins {
-    id 'java'
-    id 'org.springframework.boot' version '3.2.12'
-    id 'io.spring.dependency-management' version '1.1.6'
+// ./gradlew bootRun → platform 的 bootRun
+tasks.register('bootRun') {
+    group = 'application'
+    description = '运行 Spring Boot 应用（转发到 :rulelog-platform:bootRun）'
+    dependsOn ':rulelog-platform:bootRun'
 }
-
-group = 'com.example'
-version = '1.1.6'
-description = 'QLExpress4 规则脚本执行平台（附全链路执行日志）'
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
-
-// 源码/输出统一 UTF-8（中文脚本与中文日志的关键）
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-}
-
-tasks.withType(Test).configureEach {
-    useJUnitPlatform()
-    // 让测试里的中文断言输出不乱码
-    jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    // Spring AOP：自动拦截业务 Service 的入口/出口
-    implementation 'org.springframework.boot:spring-boot-starter-aop'
-    // QLExpress4：零第三方依赖的新版规则引擎，自带手写 Parser，兼容 Java 8
-    implementation 'com.alibaba:qlexpress4:4.1.4'
-    // OpenTelemetry：完整 SDK + OTLP HTTP exporter（版本由 Spring Boot BOM 管理）
-    implementation 'io.opentelemetry:opentelemetry-api'
-    implementation 'io.opentelemetry:opentelemetry-sdk'
-    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
-    // H2 嵌入式数据库（审计日志）+ Spring JDBC
-    implementation 'com.h2database:h2'
-    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
-    // Spring Security（RBAC）
-    implementation 'org.springframework.boot:spring-boot-starter-security'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework.security:spring-security-test'
-}
-
-// ---------- 前端构建（Vite + Vue3） ----------
-tasks.register('buildFrontend', Exec) {
+// ./gradlew bootJar → platform 的 bootJar
+tasks.register('bootJar') {
     group = 'build'
-    description = '构建前端（frontend npm run build，产物在 frontend/dist）'
-    workingDir = file('frontend')
-    // Windows 下 npm 是 npm.cmd，需要走 cmd；Linux/macOS 直接 npm
-    if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
-        commandLine 'cmd', '/c', 'npm', 'run', 'build'
-    } else {
-        commandLine 'npm', 'run', 'build'
-    }
+    description = '构建单 jar（转发到 :rulelog-platform:bootJar）'
+    dependsOn ':rulelog-platform:bootJar'
 }
-
-// ---------- 单 jar 部署：前端 dist 内嵌进 bootJar ----------
-// dist 已存在才拷贝（等价 Maven 版的 failonerror=false）：
-//   - 已执行 gradlew buildFrontend / npm run build → jar 含页面
-//   - 未构建前端 → 纯 API jar，构建不报错
-tasks.register('copyFrontendDist', Copy) {
+// ./gradlew buildFrontend → platform 的 buildFrontend
+tasks.register('buildFrontend') {
     group = 'build'
-    description = '把 frontend/dist 拷进 bootJar 的 BOOT-INF/classes/static'
-    from layout.projectDirectory.dir('frontend/dist')
-    into layout.buildDirectory.dir('bootJarStatic')
-    onlyIf { layout.projectDirectory.dir('frontend/dist').asFile.exists() }
-}
-
-tasks.named('bootJar') {
-    dependsOn tasks.named('copyFrontendDist')
-    from(layout.buildDirectory.dir('bootJarStatic')) {
-        into 'BOOT-INF/classes/static'
-    }
-}
-
-// ---------- 本地运行：gradlew bootRun ----------
-// 统一 JVM 输出编码为 UTF-8（等价 Maven 版的 jvmArguments）
-tasks.named('bootRun') {
-    jvmArgs = ['-Dfile.encoding=UTF-8', '-Dsun.jnu.encoding=UTF-8']
+    dependsOn ':rulelog-platform:buildFrontend'
 }
