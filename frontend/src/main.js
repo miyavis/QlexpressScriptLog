@@ -6,5 +6,6 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/scripts.css";
 import "./styles/executions.css";
+import "./styles/compare.css";
 
 createApp(App).mount("#app");

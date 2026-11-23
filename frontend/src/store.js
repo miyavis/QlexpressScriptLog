@@ -1409,6 +1409,157 @@ const focusCardFirstInput = (cardId) => {
 /* ---------- 页面切换（布局壳用） ---------- */
 const goView = (v) => { view.value = v; };
 
+/* ---------- 比对画布 ---------- */
+const compareRules = ref([]);
+const selectedCompareRuleId = ref(null);
+const compareDraft = ref(null);           // 当前编辑的规则（深拷贝，改动不污染列表）
+const compareResult = ref(null);
+const isRunningCompare = ref(false);
+const isLoadingCompare = ref(false);
+const compareContextJson = ref('{\n  "user": "张三"\n}');
+const compareScriptSources = ref([]);
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const loadCompareRules = async () => {
+  isLoadingCompare.value = true;
+  try {
+    compareRules.value = await requestJson(`${API}/compare-rules`, {}, fetch, getApiToken());
+    if (!selectedCompareRuleId.value && compareRules.value.length) {
+      selectCompareRule(compareRules.value[0].id);
+    }
+    loadCompareScriptSources();
+  } catch (e) {
+    notify("加载比对规则失败：" + e.message, "error");
+  } finally {
+    isLoadingCompare.value = false;
+  }
+};
+
+const loadCompareScriptSources = async () => {
+  try {
+    compareScriptSources.value = await requestJson(`${API}/compare-rules/script-sources`, {}, fetch, getApiToken());
+  } catch (e) {
+    compareScriptSources.value = [];
+  }
+};
+
+const selectCompareRule = (id) => {
+  const rule = compareRules.value.find((r) => r.id === id);
+  if (!rule) return;
+  selectedCompareRuleId.value = id;
+  compareDraft.value = clone(rule);
+  compareResult.value = null;
+};
+
+const newCompareRule = () => {
+  compareDraft.value = {
+    id: "",
+    name: "新建比对规则",
+    description: "",
+    fetchNodes: [],
+    compareNode: { id: "c1", name: "比对", keyField: "", sourceKeys: [], fields: [] }
+  };
+  selectedCompareRuleId.value = null;
+  compareResult.value = null;
+};
+
+const saveCompareRule = async () => {
+  if (!compareDraft.value) return;
+  if (!compareDraft.value.name || !compareDraft.value.name.trim()) {
+    notify("请填写规则名称", "warning");
+    return;
+  }
+  try {
+    const saved = await writeRequest(`${API}/compare-rules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(compareDraft.value)
+    });
+    compareDraft.value = clone(saved);
+    selectedCompareRuleId.value = saved.id;
+    await loadCompareRules();
+    selectCompareRule(saved.id);
+    notify("比对规则已保存", "success");
+  } catch (e) {
+    if (!isUnauthorized(e)) notify("保存失败：" + e.message, "error");
+  }
+};
+
+const deleteCompareRule = async (id) => {
+  if (!id) return;
+  try {
+    await writeRequest(`${API}/compare-rules/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadCompareRules();
+    if (selectedCompareRuleId.value === id) newCompareRule();
+    notify("比对规则已删除", "success");
+  } catch (e) {
+    if (!isUnauthorized(e)) notify("删除失败：" + e.message, "error");
+  }
+};
+
+const runCompare = async () => {
+  if (!selectedCompareRuleId.value) {
+    notify("请先保存比对规则", "warning");
+    return;
+  }
+  let context;
+  try {
+    context = JSON.parse(compareContextJson.value || "{}");
+  } catch (e) {
+    notify("运行上下文不是合法 JSON", "error");
+    return;
+  }
+  isRunningCompare.value = true;
+  compareResult.value = null;
+  try {
+    compareResult.value = await requestJson(`${API}/compare-rules/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ruleId: selectedCompareRuleId.value, context })
+    }, fetch, getApiToken());
+  } catch (e) {
+    notify("比对执行失败：" + e.message, "error");
+  } finally {
+    isRunningCompare.value = false;
+  }
+};
+
+// 草稿编辑 helper
+const addFetchNode = () => {
+  if (!compareDraft.value) return;
+  const i = compareDraft.value.fetchNodes.length;
+  compareDraft.value.fetchNodes.push({
+    id: "f" + Date.now(), name: "取数" + (i + 1), sourceType: "CONST",
+    sourceName: "[]", resultKey: "SRC" + (i + 1), paramMapping: {}
+  });
+};
+const removeFetchNode = (id) => {
+  if (!compareDraft.value) return;
+  compareDraft.value.fetchNodes = compareDraft.value.fetchNodes.filter((n) => n.id !== id);
+};
+const addFieldCompare = () => {
+  if (!compareDraft.value) return;
+  compareDraft.value.compareNode.fields.push({ field: "", label: "", strategy: "equal", tolerance: 0 });
+};
+const removeFieldCompare = (idx) => {
+  if (!compareDraft.value) return;
+  compareDraft.value.compareNode.fields.splice(idx, 1);
+};
+const addParamMapping = (node) => {
+  if (!node.paramMapping) node.paramMapping = {};
+  node.paramMapping["参数" + (Object.keys(node.paramMapping).length + 1)] = "";
+};
+const removeParamMapping = (node, key) => {
+  delete node.paramMapping[key];
+};
+const renameParamMapping = (node, oldKey, newKey) => {
+  if (!newKey || newKey === oldKey) return;
+  const val = node.paramMapping[oldKey];
+  delete node.paramMapping[oldKey];
+  node.paramMapping[newKey] = val;
+};
+
 export {
   API,
   view,
@@ -1589,6 +1740,27 @@ export {
   compareB,
   executionDiff,
   toggleCompare,
-  clearCompare
+  clearCompare,
+  compareRules,
+  selectedCompareRuleId,
+  compareDraft,
+  compareResult,
+  isRunningCompare,
+  isLoadingCompare,
+  compareContextJson,
+  compareScriptSources,
+  loadCompareRules,
+  selectCompareRule,
+  newCompareRule,
+  saveCompareRule,
+  deleteCompareRule,
+  runCompare,
+  addFetchNode,
+  removeFetchNode,
+  addFieldCompare,
+  removeFieldCompare,
+  addParamMapping,
+  removeParamMapping,
+  renameParamMapping
 };
 

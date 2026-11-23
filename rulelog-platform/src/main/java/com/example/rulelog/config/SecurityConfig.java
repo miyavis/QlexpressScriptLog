@@ -44,7 +44,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/**").permitAll()
                         // 执行类接口公开（不修改持久数据，Demo 核心体验）
                         .requestMatchers(HttpMethod.POST,
-                                "/api/executions/run", "/api/executions/rerun", "/api/executions/check").permitAll()
+                                "/api/executions/run", "/api/executions/rerun", "/api/executions/check",
+                                "/api/compare-rules/run").permitAll()
                         // 其余写操作需认证（admin 或 viewer 均可，防匿名用户乱写）
                         .requestMatchers(HttpMethod.POST, "/api/**").hasAnyRole("ADMIN", "VIEWER")
                         .requestMatchers(HttpMethod.PUT, "/api/**").hasAnyRole("ADMIN", "VIEWER")
