@@ -1,14 +1,17 @@
 package com.example.rulelog.controller;
 
+import com.example.rulelog.compare.CompareRecord;
 import com.example.rulelog.compare.CompareResult;
 import com.example.rulelog.compare.CompareRule;
 import com.example.rulelog.exception.NotFoundException;
 import com.example.rulelog.service.CompareService;
+import com.example.rulelog.store.CompareRecordStore;
 import com.example.rulelog.store.CompareRuleStore;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /** 比对画布 REST API：规则 CRUD + 执行 + 取数源列表。 */
 @RestController
@@ -17,10 +20,12 @@ public class CompareController {
 
     private final CompareRuleStore store;
     private final CompareService compareService;
+    private final CompareRecordStore recordStore;
 
-    public CompareController(CompareRuleStore store, CompareService compareService) {
+    public CompareController(CompareRuleStore store, CompareService compareService, CompareRecordStore recordStore) {
         this.store = store;
         this.compareService = compareService;
+        this.recordStore = recordStore;
     }
 
     /** 规则列表 */
@@ -62,7 +67,28 @@ public class CompareController {
         @SuppressWarnings("unchecked")
         Map<String, Object> context = body.get("context") instanceof Map
                 ? (Map<String, Object>) body.get("context") : java.util.Collections.emptyMap();
-        return compareService.run(rule, context);
+
+        CompareResult result = compareService.run(rule, context);
+
+        // 落盘历史（上下文快照 + 结果 + traceId 关联）
+        CompareRecord rec = new CompareRecord();
+        rec.setId("cmprec_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        rec.setRuleId(rule.getId());
+        rec.setRuleName(rule.getName());
+        rec.setSavedAt(System.currentTimeMillis());
+        rec.setContext(context);
+        rec.setResult(result);
+        rec.setSummary(result.getTotalRows() + " 行 / " + result.getInconsistentRows() + " 处不一致");
+        recordStore.append(rec);
+
+        return result;
+    }
+
+    /** 比对执行历史（可按规则过滤） */
+    @GetMapping("/records")
+    public List<CompareRecord> records(@RequestParam(required = false) String ruleId,
+                                       @RequestParam(defaultValue = "50") int limit) {
+        return recordStore.list(ruleId, Math.min(Math.max(limit, 1), 200));
     }
 
     /** 可作为取数来源的脚本（前端下拉） */

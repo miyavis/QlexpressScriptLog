@@ -34,10 +34,21 @@
           <span>① 取数节点</span>
           <button class="btn-secondary sm" @click="addFetchNode()">＋ 添加取数节点</button>
         </div>
-        <p class="cmp-hint">每个节点取一份数据（脚本返回值 / 内置数据 / 函数调用），结果存入「结果 Key」供比对节点引用。</p>
+        <p class="cmp-hint">每个节点取一份数据（脚本返回值 / 内置数据 / 函数调用），结果存入「结果 Key」供比对节点引用。拖动节点可调整顺序，点数据池项可复制引用表达式。</p>
 
-        <div v-for="(node, idx) in draft.fetchNodes" :key="node.id" class="cmp-node-card">
+        <div class="cmp-data-pool">
+          <div class="cmp-pool-head">📦 可用数据池（点击复制引用）</div>
+          <div class="cmp-pool-items">
+            <button v-for="p in dataPool" :key="p.expr" class="cmp-pool-chip" :title="p.hint" @click="copyExpr(p.expr)">
+              {{ p.expr }}
+            </button>
+          </div>
+        </div>
+
+        <div v-for="(node, idx) in draft.fetchNodes" :key="node.id" class="cmp-node-card"
+             draggable="true" @dragstart="dragIdx = idx" @dragover.prevent @drop="dropNode(idx)">
           <div class="cmp-node-head">
+            <span class="cmp-drag-handle" title="拖动排序">⠿</span>
             <span class="cmp-node-title">取数 {{ idx + 1 }}</span>
             <input v-model="node.name" class="card-input cmp-node-name" placeholder="节点名称" />
             <button class="card-btn danger" @click="removeFetchNode(node.id)" title="删除节点">✕</button>
@@ -131,7 +142,17 @@
           {{ isRunningCompare ? '比对中…' : '▶ 运行比对' }}
         </button>
 
+        <div class="cmp-history" v-if="compareRecords.length">
+          <select class="card-input" :value="''" @change="showCompareRecord(compareRecords.find(r => r.id === $event.target.value))">
+            <option value="">📜 历史记录（点选回看）</option>
+            <option v-for="rec in compareRecords" :key="rec.id" :value="rec.id">
+              {{ new Date(rec.savedAt).toLocaleString() }} · {{ rec.summary }}
+            </option>
+          </select>
+        </div>
+
         <template v-if="compareResult">
+          <label class="cmp-only-diff"><input type="checkbox" v-model="onlyDifferences" /> 只看差异</label>
           <div class="cmp-result-summary" :class="compareResult.inconsistentRows ? 'bad' : 'good'">
             <div>总行数 <b>{{ compareResult.totalRows }}</b></div>
             <div>一致 <b>{{ compareResult.consistentRows }}</b></div>
@@ -149,7 +170,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, i) in compareResult.rows" :key="i" :class="{ bad: !row.consistent }">
+                <tr v-for="(row, i) in visibleRows" :key="i" :class="{ bad: !row.consistent }">
                   <td class="cmp-key-cell">{{ row.key }}</td>
                   <td v-for="f in draft.compareNode.fields" :key="f.field" class="cmp-cell">
                     <div v-for="(vals, sk) in row.sourceValues" :key="sk" class="cmp-cell-val">
@@ -164,6 +185,15 @@
               </tbody>
             </table>
           </div>
+          <div class="cmp-drill" v-if="Object.keys(compareResult.scriptTraceIds || {}).length">
+            <div class="cmp-drill-title">取数执行日志（点开下钻）</div>
+            <a v-for="(tid, sid) in compareResult.scriptTraceIds" :key="sid"
+               class="cmp-drill-link" :href="'/?scriptId=' + encodeURIComponent(sid) + '&traceId=' + encodeURIComponent(tid)"
+               target="_blank" rel="noopener">
+              {{ sid }} → {{ tid }}
+            </a>
+          </div>
+          <p v-if="onlyDifferences && !visibleRows.length" class="cmp-empty">本次比对没有差异 🎉</p>
         </template>
         <p v-else class="cmp-empty">配置好规则后点「运行比对」，结果按 Key 对齐展示</p>
       </section>
@@ -172,16 +202,48 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import {
   compareRules, selectedCompareRuleId, compareDraft, compareResult, isRunningCompare,
-  compareContextJson, compareScriptSources, loadCompareRules, selectCompareRule,
+  compareContextJson, compareScriptSources, compareRecords, onlyDifferences,
+  showCompareRecord, loadCompareRules, selectCompareRule,
   newCompareRule, saveCompareRule, deleteCompareRule, runCompare,
-  addFetchNode, removeFetchNode, addFieldCompare, removeFieldCompare,
+  addFetchNode, removeFetchNode, moveFetchNode, addFieldCompare, removeFieldCompare,
   addParamMapping, removeParamMapping, renameParamMapping, notify
 } from "../store.js";
 
 const draft = computed(() => compareDraft.value);
+const dragIdx = ref(null);
+const dropNode = (toIdx) => {
+  if (dragIdx.value !== null) moveFetchNode(dragIdx.value, toIdx);
+  dragIdx.value = null;
+};
+
+/** 数据池：运行上下文顶层字段 + 各取数节点结果 Key */
+const dataPool = computed(() => {
+  const out = [];
+  try {
+    const ctx = JSON.parse(compareContextJson.value || "{}");
+    for (const k of Object.keys(ctx || {})) out.push({ expr: "${" + k + "}", hint: "运行上下文字段 " + k });
+  } catch (e) { /* 上下文尚未填好 */ }
+  for (const n of draft.value?.fetchNodes || []) {
+    if (n.resultKey) out.push({ expr: "${" + n.resultKey + "}", hint: n.name + " 的取数结果" });
+  }
+  return out;
+});
+
+const copyExpr = async (expr) => {
+  try {
+    await navigator.clipboard.writeText(expr);
+    notify("已复制 " + expr + "，粘贴到参数映射即可引用", "success");
+  } catch (e) {
+    notify("复制失败，请手动输入 " + expr, "warning");
+  }
+};
+const visibleRows = computed(() => {
+  const rows = compareResult.value?.rows || [];
+  return onlyDifferences.value ? rows.filter((r) => !r.consistent) : rows;
+});
 
 const confirmDelete = () => {
   if (selectedCompareRuleId.value && confirm("确定删除这条比对规则？")) {

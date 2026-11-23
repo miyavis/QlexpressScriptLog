@@ -912,6 +912,38 @@ const runScript = async () => {
   }
 };
 
+/** 试跑：用当前编辑器内容 + 参数立即执行，不保存、不落执行记录 */
+const trialResult = ref(null);
+const trialScript = async () => {
+  if (isRunning.value) return;
+  if (!form.content || !form.content.trim()) {
+    notify("脚本内容为空", "warning");
+    return;
+  }
+  let params;
+  try {
+    params = JSON.parse(form.defaultParamsJson || "{}");
+  } catch (e) {
+    notify("默认参数不是合法的 JSON", "error");
+    return;
+  }
+  isRunning.value = true;
+  trialResult.value = null;
+  try {
+    const r = await requestJson(`${API}/executions/trial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: form.content, params })
+    }, fetch, getApiToken());
+    trialResult.value = r;
+    notify(r.success ? "试跑成功（未记录）" : "试跑失败：" + r.error, r.success ? "success" : "error");
+  } catch (e) {
+    notify("试跑失败：" + e.message, "error");
+  } finally {
+    isRunning.value = false;
+  }
+};
+
 /* ---------- 执行记录 API ---------- */
 /** 清空所有执行记录 */
 const clearExecutions = async () => {
@@ -1418,6 +1450,8 @@ const isRunningCompare = ref(false);
 const isLoadingCompare = ref(false);
 const compareContextJson = ref('{\n  "user": "张三"\n}');
 const compareScriptSources = ref([]);
+const compareRecords = ref([]);
+const onlyDifferences = ref(false);
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -1429,6 +1463,7 @@ const loadCompareRules = async () => {
       selectCompareRule(compareRules.value[0].id);
     }
     loadCompareScriptSources();
+    loadCompareRecords();
   } catch (e) {
     notify("加载比对规则失败：" + e.message, "error");
   } finally {
@@ -1444,12 +1479,29 @@ const loadCompareScriptSources = async () => {
   }
 };
 
+const loadCompareRecords = async () => {
+  try {
+    const q = selectedCompareRuleId.value ? `?ruleId=${encodeURIComponent(selectedCompareRuleId.value)}` : "";
+    compareRecords.value = await requestJson(`${API}/compare-rules/records${q}`, {}, fetch, getApiToken());
+  } catch (e) {
+    compareRecords.value = [];
+  }
+};
+
+/** 回看历史：把当时的结果和上下文装回界面 */
+const showCompareRecord = (rec) => {
+  if (!rec) return;
+  compareResult.value = rec.result;
+  compareContextJson.value = JSON.stringify(rec.context || {}, null, 2);
+};
+
 const selectCompareRule = (id) => {
   const rule = compareRules.value.find((r) => r.id === id);
   if (!rule) return;
   selectedCompareRuleId.value = id;
   compareDraft.value = clone(rule);
   compareResult.value = null;
+  loadCompareRecords();
 };
 
 const newCompareRule = () => {
@@ -1518,6 +1570,7 @@ const runCompare = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ruleId: selectedCompareRuleId.value, context })
     }, fetch, getApiToken());
+    loadCompareRecords();
   } catch (e) {
     notify("比对执行失败：" + e.message, "error");
   } finally {
@@ -1537,6 +1590,13 @@ const addFetchNode = () => {
 const removeFetchNode = (id) => {
   if (!compareDraft.value) return;
   compareDraft.value.fetchNodes = compareDraft.value.fetchNodes.filter((n) => n.id !== id);
+};
+const moveFetchNode = (fromIdx, toIdx) => {
+  const nodes = compareDraft.value?.fetchNodes;
+  if (!nodes || fromIdx == null || toIdx == null || fromIdx === toIdx) return;
+  if (fromIdx < 0 || toIdx < 0 || fromIdx >= nodes.length || toIdx >= nodes.length) return;
+  const [moved] = nodes.splice(fromIdx, 1);
+  nodes.splice(toIdx, 0, moved);
 };
 const addFieldCompare = () => {
   if (!compareDraft.value) return;
@@ -1654,6 +1714,8 @@ export {
   saveScript,
   deleteScript,
   runScript,
+  trialResult,
+  trialScript,
   isRunning,
   loadExecutions,
   loadScriptExecutions,
@@ -1749,7 +1811,11 @@ export {
   isLoadingCompare,
   compareContextJson,
   compareScriptSources,
+  compareRecords,
+  onlyDifferences,
   loadCompareRules,
+  loadCompareRecords,
+  showCompareRecord,
   selectCompareRule,
   newCompareRule,
   saveCompareRule,
@@ -1757,6 +1823,7 @@ export {
   runCompare,
   addFetchNode,
   removeFetchNode,
+  moveFetchNode,
   addFieldCompare,
   removeFieldCompare,
   addParamMapping,

@@ -35,6 +35,13 @@ class CompareControllerTest {
                 .andExpect(jsonPath("$.rows[0].consistent").value(false))
                 .andExpect(jsonPath("$.rows[0].cells.金额.consistent").value(false))
                 .andExpect(jsonPath("$.rows[1].consistent").value(true));
+
+        // 执行历史：刚才那次运行已落盘
+        mvc.perform(get("/api/compare-rules/records").param("ruleId", "cmp_sample"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ruleId").value("cmp_sample"))
+                .andExpect(jsonPath("$[0].result.totalRows").value(2))
+                .andExpect(jsonPath("$[0].summary").value("2 行 / 1 处不一致"));
     }
 
     @Test

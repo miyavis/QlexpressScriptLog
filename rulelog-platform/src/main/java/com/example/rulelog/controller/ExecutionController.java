@@ -7,6 +7,7 @@ import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.util.RequestValidator;
 import com.example.rulelog.util.ScriptValidator;
 import com.example.rulelog.express.Express4Engine;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,6 +24,8 @@ public class ExecutionController {
     private final ExecutionRecordStore recordStore;
     private final Express4Engine engine;
     private final com.example.rulelog.store.AuditStore auditStore;
+    @Value("${app.script-timeout-millis:5000}")
+    private long scriptTimeoutMillis;
 
     public ExecutionController(RuleExecutionService ruleExecutionService,
                                ExecutionRecordStore recordStore,
@@ -44,6 +47,33 @@ public class ExecutionController {
         // 执行错误已被 RuleExecutionService 转成 record 内的 errorMessage 展示；
         // 这里不再包一层 RuntimeException（会把内部异常信息经 GlobalExceptionHandler 泄漏）
         return ruleExecutionService.run(scriptId, params);
+    }
+
+    /**
+     * 试跑：用编辑器里"当前未保存的内容 + 参数"立即执行，不落正式执行记录、不写审计。
+     * Body: {"content":"返回 1;", "params":{...}} → {"success":true,"result":...,"error":null}
+     */
+    @PostMapping("/trial")
+    public Map<String, Object> trial(@RequestBody Map<String, Object> body) {
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        String content = body.get("content") == null ? null : String.valueOf(body.get("content"));
+        if (content == null || content.trim().isEmpty()) {
+            out.put("success", false);
+            out.put("error", "脚本内容为空");
+            return out;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = body.get("params") instanceof Map
+                ? (Map<String, Object>) body.get("params") : java.util.Collections.emptyMap();
+        try {
+            Object result = engine.execute(content, params, scriptTimeoutMillis).getResult();
+            out.put("success", true);
+            out.put("result", result);
+        } catch (Exception e) {
+            out.put("success", false);
+            out.put("error", e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+        return out;
     }
 
     /** 当前操作者：优先从 SecurityContext 取，未认证时为 anonymous */

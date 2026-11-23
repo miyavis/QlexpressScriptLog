@@ -95,26 +95,36 @@ public class RuleExecutionService {
         if (overrideParams != null) {
             actualParams.putAll(overrideParams);
         }
+        return executeInternal(script.getId(), script.getName(), script.getContent(), actualParams);
+    }
 
+    /** 执行任意脚本文本（比对画布里"函数调用"取数节点用），同样生成可下钻的执行记录 */
+    public RuleExecutionRecord runByContent(String virtualScriptId, String content, Map<String, Object> params) throws Exception {
+        return executeInternal(virtualScriptId, virtualScriptId, content,
+                params == null ? new LinkedHashMap<>() : params);
+    }
+
+    private RuleExecutionRecord executeInternal(String scriptId, String scriptName,
+                                                 String content, Map<String, Object> actualParams) throws Exception {
         String traceId = UUID.randomUUID().toString().replace("-", "").substring(0, 16)
                 .toUpperCase();
 
         RuleExecutionRecord record = new RuleExecutionRecord();
         record.setTraceId(traceId);
         record.setTraceparent(com.example.rulelog.trace.TraceParent.fromPlatformTraceId(traceId));
-        record.setScriptId(script.getId());
-        record.setScriptName(script.getName());
-        record.setScriptSnapshot(script.getContent());
+        record.setScriptId(scriptId);
+        record.setScriptName(scriptName);
+        record.setScriptSnapshot(content);
         record.setParams(actualParams);
         record.setStartTime(System.currentTimeMillis());
 
         QLResult qlResult = null;
-        io.opentelemetry.context.Context otelRoot = otel.startExecution(traceId, script.getId());
+        io.opentelemetry.context.Context otelRoot = otel.startExecution(traceId, scriptId);
         try {
             // startTrace/set 必须放进 try：万一它们自身异常，finally 仍能清理 ThreadLocal，避免上下文泄漏到后续请求
             StepLogger.startTrace(traceId);
             RuleTraceContext.set(traceId);
-            qlResult = engine.execute(script.getContent(), actualParams, timeoutMillis);
+            qlResult = engine.execute(content, actualParams, timeoutMillis);
             record.setResult(qlResult.getResult());
             record.setSuccess(true);
         } catch (QLException e) {
@@ -123,13 +133,13 @@ public class RuleExecutionService {
             record.setResult(null);
             record.setErrorType(describeErrorType(e));
             // errorMessage 存中文摘要（第几行/什么错/出错行内容），原始英文信息保留在摘要尾部供开发排查
-            record.setErrorMessage(ErrorSummarizer.summarize(e, splitLines(script.getContent())).detail);
+            record.setErrorMessage(ErrorSummarizer.summarize(e, splitLines(content)).detail);
         } finally {
             // ① 采集并聚合日志（StepLogger 采集器必须先于 ThreadLocal 清理）
             StepLogger.Collector collector = StepLogger.drainAndRemove();
             record.setCalls(collector.getRootCalls());
             record.setRootSteps(collector.getRootSteps());
-            groupLogsByLine(record, qlResult, script.getContent());
+            groupLogsByLine(record, qlResult, content);
             record.setEndTime(System.currentTimeMillis());
             record.setDurationMs(Math.max(0, record.getEndTime() - record.getStartTime()));
             // ② OTel 导出是"尽力而为"：collector 不可达等异常绝不能吞掉执行记录或泄漏 ThreadLocal

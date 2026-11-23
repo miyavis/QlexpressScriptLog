@@ -581,9 +581,14 @@
             <div class="form-actions">
               <button class="btn-primary" @click="saveScript">保存</button>
               <button class="btn-success" :disabled="isRunning" @click="runScript">{{ isRunning ? "执行中…" : "执行脚本" }}</button>
+              <button class="btn-secondary" :disabled="isRunning" @click="trialScript" title="用当前内容+参数立即执行，不保存、不落执行记录">⚡ 试跑</button>
               <button class="btn-secondary" @click="exportCurrentScript" title="导出成 JSON 文件，发给他人可导入">导出脚本</button>
               <button class="btn-delete" @click="deleteScript(form.id)">删除</button>
               <button class="btn-secondary" @click="cancelEdit">取消</button>
+            </div>
+            <div v-if="trialResult" class="trial-result" :class="trialResult.success ? 'ok' : 'bad'">
+              <b>{{ trialResult.success ? '⚡ 试跑结果' : '⚡ 试跑失败' }}</b>
+              <code>{{ trialResult.success ? JSON.stringify(trialResult.result) : trialResult.error }}</code>
             </div>
           </div>
           <div v-if="!editing" class="empty">请在上方选择一个脚本，或点击「+ 新建脚本」。</div>
@@ -691,6 +696,8 @@ import {
   saveScript,
   deleteScript,
   runScript,
+  trialResult,
+  trialScript,
   isRunning,
   loadExecutions,
   loadScriptExecutions,
