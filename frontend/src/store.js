@@ -31,6 +31,7 @@ import { buildExecutionDiff } from "./composables/executionDiff.js";
 import { fmtScalar, truncate, callArgs, callResult, rawExprDesc, parseBranchInfo, buildLineAssigns, buildReturnDesc, buildExecSummary, buildCondText, findCondVerdict } from "./composables/logPresentation.js";
 import { buildTimeline } from "./composables/executionTimeline.js";
 import { buildTopology } from "./composables/callTopology.js";
+import { parseDeepLink, pickExecutionRecord } from "./composables/deepLink.js";
 
 const API = "/api";
 
@@ -954,8 +955,10 @@ const loadScriptExecutions = async (scriptId) => {
       selectedLogTraceId.value = null;
       selectedLogRecord.value = null;
     }
+    return list;
   } catch (e) {
     console.warn("加载脚本执行日志失败：" + e.message);
+    return [];
   }
 };
 
@@ -1266,8 +1269,36 @@ const toggleLogDetail = (r) => {
     selectedLogTraceId.value = null;
     selectedLogRecord.value = null;
   } else {
-    selectedLogTraceId.value = r.traceId;
-    selectedLogRecord.value = r;
+    selectLogRecord(r.traceId);
+  }
+};
+
+/** 按 traceId 从当前脚本执行记录中选中一条（下拉框/深链调用） */
+const selectLogRecord = (traceId) => {
+  const rec = scriptExecutions.value.find((r) => r.traceId === traceId)
+    || pickExecutionRecord(scriptExecutions.value, traceId);
+  if (!rec) return;
+  selectedLogTraceId.value = rec.traceId;
+  selectedLogRecord.value = rec;
+};
+
+/** 应用外部跳转深链：/?scriptId=xxx&traceId=yyy
+ *  在脚本列表加载完成后调用；带 scriptId 则进入该脚本编辑态并选中指定/最新执行记录 */
+const applyDeepLink = async () => {
+  const { scriptId, traceId } = parseDeepLink(
+    typeof window !== "undefined" ? window.location.search : "");
+  if (!scriptId) return;
+  const target = scripts.value.find((s) => s.id === scriptId);
+  if (!target) {
+    notify(`未找到脚本「${scriptId}」`, "warning");
+    return;
+  }
+  goView("scripts");
+  selectScript(target); // 内部会 loadScriptExecutions（fire-and-forget）
+  // 再请求一次并 await：竞态保护（scriptLogRequestSeq）会让前一次结果作废，这里拿到的是最新列表
+  const records = await loadScriptExecutions(scriptId);
+  if (records && records.length) {
+    selectLogRecord(traceId); // 带 traceId 选指定，否则最新
   }
 };
 
@@ -1453,6 +1484,8 @@ export {
   isRunning,
   loadExecutions,
   loadScriptExecutions,
+  applyDeepLink,
+  selectLogRecord,
   downloadExecution,
   showHistory,
   historyVersions,

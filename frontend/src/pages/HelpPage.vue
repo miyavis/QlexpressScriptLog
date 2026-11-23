@@ -59,6 +59,16 @@
     </div>
 
     <div class="help-card">
+      <h2>外部系统跳转进来</h2>
+      <p class="hint">外部页面可用 URL 参数直接打开某个规则的编辑页，并自动展示执行日志。</p>
+      <ul class="hint ul">
+        <li><code>/?scriptId=vip_discount</code>：打开该规则编辑页，自动选中<strong>最近一次</strong>执行记录。</li>
+        <li><code>/?scriptId=vip_discount&amp;traceId=A1B2...</code>：打开编辑页并展示<strong>指定</strong> traceId 的那条记录（找不到则回退最新）。</li>
+        <li>进入后，日志区顶部的<strong>执行记录下拉框</strong>可切换查看该规则最近 50 条记录（时间 + traceId 前缀 + 成功/失败）。</li>
+      </ul>
+    </div>
+
+    <div class="help-card">
       <h2>看不懂执行日志？</h2>
       <ul class="hint ul">
         <li>每行脚本对应一段日志（悬停/点击互相高亮），顶部显示入参。</li>

@@ -347,6 +347,17 @@
                 <div class="log-header">
                   <h3>执行日志</h3>
                   <div class="log-header-btns">
+                    <select
+                      v-if="scriptExecutions.length"
+                      class="log-record-select"
+                      :value="selectedLogTraceId"
+                      @change="onSelectLogRecord"
+                      title="选择查看哪条执行记录"
+                    >
+                      <option v-for="r in scriptExecutions" :key="r.traceId" :value="r.traceId">
+                        {{ formatTime(r.startTime) }} · {{ r.traceId.slice(0, 8) }} · {{ r.success ? '成功' : '失败' }}
+                      </option>
+                    </select>
                     <button v-if="selectedLogRecord" class="btn-secondary sm" @click="downloadExecution(selectedLogRecord)">导出</button>
                     <button class="btn-secondary sm" @click="loadScriptExecutions(form.id)">刷新</button>
                   </div>
@@ -721,7 +732,8 @@ import {
   isTestingCases,
   addTestCase,
   removeTestCase,
-  runTestCases
+  runTestCases,
+  selectLogRecord
 } from "../store.js";
 
 // 字段编辑撤销：字段获得焦点时记录快照；同一张卡片连续聚焦不重复记录
@@ -758,4 +770,9 @@ const onKeydown = (e) => {
 };
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+
+// 日志区下拉框：按选中的 traceId 切换展示的执行记录
+const onSelectLogRecord = (e) => {
+  selectLogRecord(e.target.value);
+};
 </script>

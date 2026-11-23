@@ -42,15 +42,17 @@
 import { onMounted } from "vue";
 import ToastHost from "./components/ToastHost.vue";
 import LoginDialog from "./components/LoginDialog.vue";
-import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry, isLoggedIn, currentUsername, logout, openLogin } from "./store.js";
+import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry, applyDeepLink, selectLogRecord, isLoggedIn, currentUsername, logout, openLogin } from "./store.js";
 import ScriptsPage from "./pages/ScriptsPage.vue";
 import ExecutionsPage from "./pages/ExecutionsPage.vue";
 import HelpPage from "./pages/HelpPage.vue";
 
 // 页面初始化：壳挂载后统一拉数据（store 里不再有生命周期）
-onMounted(() => {
-  loadScripts();
+onMounted(async () => {
+  await loadScripts();
   loadExecutions();
   loadFunctionRegistry();
+  // 外部跳转深链：脚本列表就绪后进入指定脚本并展示执行记录
+  applyDeepLink();
 });
 </script>

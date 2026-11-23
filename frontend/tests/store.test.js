@@ -25,7 +25,8 @@ describe("store.js（页面共享状态单例）", () => {
       "selectScript", "newScript", "saveScript", "runScript", "deleteScript",
       "importScriptFromFile", "exportCurrentScript",
       "selectExecution", "enterCanvas", "addCard", "moveCard", "duplicateCard",
-      "logout", "openLogin", "submitLogin", "cancelLogin"  // 认证动作（含退出登录）
+      "logout", "openLogin", "submitLogin", "cancelLogin",  // 认证动作（含退出登录）
+      "applyDeepLink", "selectLogRecord"  // 外部跳转深链 + 执行记录选择
     ];
     for (const a of actions) {
       expect(typeof store[a], `导出 ${a}`).toBe("function");
