@@ -1,5 +1,7 @@
 package com.example.rulelog.biz;
 
+import com.example.rulelog.annotation.RuleFunction;
+import com.example.rulelog.annotation.RuleParam;
 import com.example.rulelog.trace.StepLogger;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +14,8 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
     /** 查询用户会员等级：VIP 用户白名单模拟为内存映射 */
+    @RuleFunction(name = "查询用户等级", desc = "查询用户会员等级（VIP/普通）",
+            params = @RuleParam(name = "user", label = "用户", type = "string", required = true, desc = "用户名，如 张三"))
     public String queryLevel(String user) {
         StepLogger.log("查询会员基础信息", "用户=" + user + ", 读取注册资料");
         sleepQuietly(20);
@@ -23,6 +27,8 @@ public class UserService {
     }
 
     /** 查询用户积分 */
+    @RuleFunction(name = "查询用户积分", desc = "查询用户可用积分",
+            params = @RuleParam(name = "user", label = "用户", type = "string", required = true, desc = "用户名"))
     public int queryPoints(String user) {
         StepLogger.log("读取积分流水", "用户=" + user + ", 汇总最近30天");
         sleepQuietly(15);

@@ -1,0 +1,7 @@
+# JitPack 构建配置：发布 rulelog-core 作为 SDK 依赖
+jdk:
+  - openjdk17
+before_install:
+  - ./gradlew --version
+build:
+  - ./gradlew :rulelog-core:publishToMavenLocal

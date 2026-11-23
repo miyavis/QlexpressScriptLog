@@ -19,7 +19,19 @@ describe("normalizeFunctions（后端注册表 → 前端可用函数列表）",
     ];
     const fns = normalizeFunctions(raw);
     expect(fns).toHaveLength(1);
-    expect(fns[0]).toEqual({ name: "查询用户等级", service: "UserService", method: "queryLevel", paramHint: "user" });
+    expect(fns[0]).toEqual({
+      name: "查询用户等级", service: "UserService", method: "queryLevel",
+      paramHint: "user", desc: "", params: []
+    });
+  });
+
+  it("透传嵌套 params 参数契约", () => {
+    const raw = [{
+      chineseName: "查询用户", serviceName: "UserService", methodName: "q",
+      params: [{ name: "user", label: "用户名", type: "string", required: true }]
+    }];
+    const fns = normalizeFunctions(raw);
+    expect(fns[0].params[0].label).toBe("用户名");
   });
 
   it("过滤掉记录日志（脚本语句，不属于取数卡）和无中文名的条目", () => {

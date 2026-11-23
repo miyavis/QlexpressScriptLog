@@ -220,8 +220,8 @@ public class ScriptStore {
                 Files.write(tmp, json.getBytes(StandardCharsets.UTF_8));
                 try {
                     Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-                    // 个别文件系统不支持原子移动，降级为普通覆盖（仍比直接写目标安全）
+                } catch (IOException moveEx) {
+                    // 原子移动失败（不支持 / Windows 文件锁偶发拒绝）→ 降级普通覆盖
                     Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
                 }
             } finally {

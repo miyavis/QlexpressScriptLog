@@ -1,5 +1,7 @@
 package com.example.rulelog.biz;
 
+import com.example.rulelog.annotation.RuleFunction;
+import com.example.rulelog.annotation.RuleParam;
 import com.example.rulelog.trace.StepLogger;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +19,8 @@ public class DiscountService {
     }
 
     /** 计算折扣率，例如 0.88 表示 88 折 */
+    @RuleFunction(name = "计算折扣", desc = "根据用户计算折扣率",
+            params = @RuleParam(name = "user", label = "用户", type = "string", required = true, desc = "用户名"))
     public double calcDiscount(String user) {
         StepLogger.log("读取营销活动配置", "活动=周年庆, 门槛=会员等级联动");
 

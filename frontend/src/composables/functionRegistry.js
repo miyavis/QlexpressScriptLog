@@ -26,7 +26,9 @@ export const normalizeFunctions = (rawList) => {
       name: f.chineseName,
       service: f.serviceName || "",
       method: f.methodName || "",
-      paramHint: f.paramHint || ""
+      paramHint: f.paramHint || "",
+      desc: f.desc || "",
+      params: Array.isArray(f.params) ? f.params : []
     }));
 };
 

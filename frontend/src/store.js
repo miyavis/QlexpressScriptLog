@@ -1328,6 +1328,28 @@ const funcParamHint = (name) => {
   return f ? f.paramHint : "";
 };
 
+/** 函数的结构化参数定义（含中文名/类型/嵌套），供取数卡参数框渲染 */
+const funcParams = (name) => {
+  const f = registryFunctions.value.find((x) => x.name === name);
+  return f && Array.isArray(f.params) ? f.params : [];
+};
+
+/** 结构化参数变更 → 序列化到 c.param（保持脚本生成用字符串参数的兼容） */
+const onParamObjChange = (card, obj) => {
+  card.paramObj = obj;
+  if (!obj || Object.keys(obj).length === 0) {
+    card.param = "";
+    return;
+  }
+  const values = Object.values(obj);
+  // 单参数：直接用值（如 user="张三" → param="张三"）；多参数：JSON
+  if (values.length === 1 && !(values[0] instanceof Object)) {
+    card.param = String(values[0]);
+  } else {
+    card.param = JSON.stringify(obj);
+  }
+};
+
 /** 换函数时自动推荐结果变量名（只在变量名为空时接管），并把参数跟随切换：
  *  空参或仍是某函数默认提示值 → 换成新函数的 paramHint；用户自选变量不动 */
 const onFuncChange = (card) => {
@@ -1526,7 +1548,9 @@ export {
   loadFunctionRegistry,
   funcOptions,
   funcParamHint,
+  funcParams,
   onFuncChange,
+  onParamObjChange,
   knownVariables,
   duplicateCard,
   focusCardFirstInput,

@@ -40,6 +40,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/audit").hasRole("ADMIN")
                         // 认证状态探测：需认证（返回 401 让前端弹登录框）
                         .requestMatchers("/api/auth/status").hasAnyRole("ADMIN", "VIEWER")
+                        // 对外公开 API：全部放行（外部系统集成用）
+                        .requestMatchers("/api/public/**").permitAll()
                         // 执行类接口公开（不修改持久数据，Demo 核心体验）
                         .requestMatchers(HttpMethod.POST,
                                 "/api/executions/run", "/api/executions/rerun", "/api/executions/check").permitAll()

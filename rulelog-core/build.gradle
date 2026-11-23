@@ -5,7 +5,11 @@
  */
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
+
+group = 'com.github.miyavis'
+version = project.findProperty('releaseVersion') ?: '1.1.6-SNAPSHOT'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -29,4 +33,14 @@ dependencies {
     api 'com.alibaba:qlexpress4:4.1.4'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testImplementation 'com.h2database:h2:2.1.214'
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifactId = 'rulelog-core'
+        }
+    }
 }

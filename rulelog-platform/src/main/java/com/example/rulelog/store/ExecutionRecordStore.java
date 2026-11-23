@@ -145,7 +145,8 @@ public class ExecutionRecordStore {
                 Files.write(tmp, json.getBytes(StandardCharsets.UTF_8));
                 try {
                     Files.move(tmp, storeFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                } catch (IOException moveEx) {
+                    // 原子移动失败（不支持 / Windows 文件锁偶发拒绝）→ 降级普通覆盖
                     Files.move(tmp, storeFile, StandardCopyOption.REPLACE_EXISTING);
                 }
             } finally {

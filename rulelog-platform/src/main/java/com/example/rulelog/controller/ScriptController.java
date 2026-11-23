@@ -6,6 +6,7 @@ import com.example.rulelog.model.Script;
 import com.example.rulelog.model.ScriptRequest;
 import com.example.rulelog.model.ScriptVersion;
 import com.example.rulelog.service.ScriptVersionService;
+import com.example.rulelog.service.RuleSyncService;
 import com.example.rulelog.store.ScriptStore;
 import com.example.rulelog.store.AuditStore;
 import com.example.rulelog.util.RequestValidator;
@@ -28,10 +29,12 @@ public class ScriptController {
 
     private final ScriptStore scriptStore;
     private final AuditStore auditStore;
+    private final RuleSyncService ruleSync;
 
-    public ScriptController(ScriptStore scriptStore, AuditStore auditStore) {
+    public ScriptController(ScriptStore scriptStore, AuditStore auditStore, RuleSyncService ruleSync) {
         this.scriptStore = scriptStore;
         this.auditStore = auditStore;
+        this.ruleSync = ruleSync;
     }
 
     /** 列出所有脚本（按更新时间倒序） */
@@ -61,6 +64,7 @@ public class ScriptController {
         script.setCreatedAt(now);
         script.setUpdatedAt(now);
         scriptStore.put(script);
+        ruleSync.sync(script);
         auditStore.record(currentActor(), "CREATE", script.getId(), script.getName());
         return script;
     }
@@ -86,6 +90,7 @@ public class ScriptController {
         }
         existing.setUpdatedAt(System.currentTimeMillis());
         scriptStore.put(existing);
+        ruleSync.sync(existing);
         auditStore.record(currentActor(), "UPDATE", existing.getId(), existing.getName());
         return existing;
     }
@@ -97,6 +102,7 @@ public class ScriptController {
         if (!removed) {
             throw new NotFoundException("脚本不存在: " + id);
         }
+        ruleSync.delete(id);
         auditStore.record(currentActor(), "DELETE", id, "");
         return Collections.singletonMap("ok", true);
     }
@@ -121,6 +127,7 @@ public class ScriptController {
             script.setPublishedVersion(latestVersionNo(script));
         }
         scriptStore.put(script);
+        ruleSync.sync(script);
         auditStore.record(currentActor(), "REVIEW", script.getId(), action);
         return script;
     }
@@ -138,6 +145,7 @@ public class ScriptController {
         script.setBranch(name);
         script.setReviewStatus("draft"); // 切分支即回到草稿
         scriptStore.put(script);
+        ruleSync.sync(script);
         auditStore.record(currentActor(), "BRANCH", script.getId(), name);
         return script;
     }
@@ -165,6 +173,7 @@ public class ScriptController {
         }
         script.setPublishedVersion(versionNo);
         scriptStore.put(script);
+        ruleSync.sync(script);
         auditStore.record(currentActor(), "PUBLISH", script.getId(), "v" + versionNo);
         return script;
     }
@@ -200,4 +209,5 @@ public class ScriptController {
         }
     }
 }
+
 

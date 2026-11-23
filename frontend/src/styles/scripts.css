@@ -353,6 +353,10 @@
 .card-none { font-size: 11px; color: var(--ink-400); font-style: italic; }
 .canvas-dropzone { border: 1px dashed var(--ink-300); border-radius: var(--r-md); padding: 12px; text-align: center; font-size: 11.5px; color: var(--ink-400); background: rgba(255, 255, 255, 0.5); }
 
+/* 结构化参数区 */
+.card-struct-params { flex-basis: 100%; border: 1px solid var(--ink-200); border-radius: 8px; padding: 7px 9px; background: var(--ink-50); }
+.card-struct-title { font-size: 11px; font-weight: 650; color: var(--ink-500); margin-bottom: 6px; }
+
 /* 决策表编辑器 */
 .decision-config { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .decision-config label { font-size: 11px; color: var(--ink-500); display: flex; align-items: center; gap: 4px; }

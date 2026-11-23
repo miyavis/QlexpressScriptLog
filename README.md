@@ -28,6 +28,7 @@
 | 安全 | Spring Security（读公开 / 写需登录） |
 | Vue | 3.4 |
 | Vite | 4 |
+| 架构 | 多模块：`rulelog-core`（无 Spring SDK 内核）+ `rulelog-platform`（Spring Boot 应用） |
 
 ---
 
@@ -74,7 +75,22 @@
 
 ## 模块结构（后端）
 
+> 多模块 Gradle：`rulelog-core`（无 Spring 的纯 Java 内核，可作为 SDK 被 Maven/Gradle 引入）
+> + `rulelog-platform`（Spring Boot 应用，依赖 core）。两者包名相同（`com.example.rulelog.*`）。
+
 ```
+rulelog-core/                           ← SDK 主体（无 Spring）
+├── annotation/   @RuleFunction / @RuleParam 注解
+├── function/     FunctionScanner / FunctionMeta（注解自动发现）
+├── param/        ParamDef 递归模型 / ParamBinder / ParamValidator
+├── engine/       RuleEngine（builder + loader + 执行）/ Result
+├── loader/       RuleLoader + File / Jdbc 实现（缓存 + TTL）
+├── trace/        StepLogger / RuleTraceContext / TraceParent
+├── model/        执行记录模型
+├── util/         JsonUtils / ContextResolver / ContentHash 等
+└── sql/          QL_RULE 建表 DDL（MySQL/PG/H2）
+
+rulelog-platform/                       ← Spring Boot 应用
 src/main/java/com/example/rulelog/
 ├── RuleLogApplication.java          启动类
 ├── express/
@@ -229,6 +245,34 @@ git push origin v1.1.0
 - 两个参数都是 query 参数；`scriptId` 必填（找不到会提示），`traceId` 可选（找不到则回退到最新）。
 - 进入编辑页后，日志区顶部有**执行记录下拉框**，可随时切换查看该脚本最近 50 条记录中的任意一条（显示时间 + traceId 前缀 + 成功/失败）。
 - 此功能为纯前端深链解析，不改变后端接口；写操作仍需登录（见认证说明）。
+
+### 外部系统集成（SDK / HTTP API）
+
+平台规则可被外部 Java 项目或任意语言系统调用——规则统一存 `QL_RULE` 表，SDK 与 API 共用 core 引擎。
+
+**Java SDK（Maven/Gradle + JitPack）**：
+```gradle
+repositories { maven { url 'https://jitpack.io' } }
+dependencies { implementation 'com.github.miyavis:rulelog-core:v1.1.6' }
+```
+```java
+RuleLoader loader = JdbcRuleLoader.builder().dataSource(dataSource).build(); // 或 FileRuleLoader
+RuleEngine engine = RuleEngine.builder().loader(loader)
+    .function("查询用户等级", levelService::queryLevel).build();  // 或用 .scanFunctions(bean) 扫描 @RuleFunction 注解
+Result r = engine.runById("vip_discount", Map.of("user", "张三"));
+r.getValue(); r.getTraceId();
+```
+平台内置 Service 已用 `@RuleFunction(name="查询用户等级", params=@RuleParam(...))` 标注——加注解即自动注册到画布下拉、帮助页、日志中文名与参数定义。
+
+**HTTP API（跨语言）**：
+```
+GET  /api/public/rules                  规则列表
+GET  /api/public/rules/{id}/contract    参数契约（含中文名/嵌套对象/数组）
+POST /api/public/run                    执行
+     Body: {"rule":"vip_discount","params":{"user":"张三"}}
+     → {"success":true,"result":0.8,"traceId":"..."}
+```
+三个接口均公开访问；`traceId` 可用于在平台内下钻完整执行日志。建表 DDL 见 `rulelog-core/src/main/resources/sql/`。
 
 ### 页面布局
 

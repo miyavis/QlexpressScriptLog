@@ -35,10 +35,10 @@ class FunctionAliasRegistryTest {
         registry.register("查询用户等级", "UserService", "queryLevel", "user");
         registry.register("计算折扣", "DiscountService", "calcDiscount", "user");
 
-        List<Map<String, String>> list = registry.list();
+        List<Map<String, Object>> list = registry.list();
         assertEquals(2, list.size());
 
-        Map<String, String> first = list.get(0);
+        Map<String, Object> first = list.get(0);
         assertEquals("查询用户等级", first.get("chineseName"));
         assertEquals("UserService", first.get("serviceName"));
         assertEquals("queryLevel", first.get("methodName"));
@@ -66,6 +66,6 @@ class FunctionAliasRegistryTest {
         FunctionAliasRegistry registry = new FunctionAliasRegistry();
         registry.register("记录日志", "StepLogger", "log", null);
         assertFalse(registry.list().get(0).containsKey("paramHint") && registry.list().get(0).get("paramHint") == null);
-        assertTrue(registry.list().get(0).get("paramHint").isEmpty());
+        assertTrue(String.valueOf(registry.list().get(0).get("paramHint")).isEmpty());
     }
 }

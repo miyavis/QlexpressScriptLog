@@ -246,7 +246,19 @@
                                 <option v-for="f in funcOptions" :key="f.name" :value="f.name">{{ f.name }}</option>
                               </select>
                             </label>
-                            <label>参数<input v-model="c.param" class="card-input" :placeholder="funcParamHint(c.func) || '参数名'" list="known-vars" /></label>
+                            <template v-if="funcParams(c.func).length">
+                              <div class="card-struct-params">
+                                <div class="card-struct-title">参数（按函数定义填写）</div>
+                                <ParamInput
+                                  v-for="p in funcParams(c.func)"
+                                  :key="c.id + '_' + p.name"
+                                  :def="p"
+                                  :model-value="(c.paramObj || {})[p.name]"
+                                  @update:model-value="onParamObjChange(c, { ...(c.paramObj || {}), [p.name]: $event })"
+                                />
+                              </div>
+                            </template>
+                            <label v-else>参数<input v-model="c.param" class="card-input" :placeholder="funcParamHint(c.func) || '参数名'" list="known-vars" /></label>
                           </template>
                           <template v-else-if="c.type === 'prepcall'">
                             <label>参数名<input v-model="c.prepName" class="card-input" placeholder="查询用户" /></label>
@@ -581,6 +593,7 @@
 
 <script setup>
 import { onMounted, onUnmounted } from "vue";
+import ParamInput from "../components/ParamInput.vue";
 // 状态与动作全部来自 ../store.js（模块级单例，切页不丢状态）
 import {
   API,
@@ -716,7 +729,9 @@ import {
   loadFunctionRegistry,
   funcOptions,
   funcParamHint,
+  funcParams,
   onFuncChange,
+  onParamObjChange,
   knownVariables,
   duplicateCard,
   focusCardFirstInput,

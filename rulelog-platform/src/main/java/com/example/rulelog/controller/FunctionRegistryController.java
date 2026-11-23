@@ -25,7 +25,7 @@ public class FunctionRegistryController {
 
     /** 已注册的全部中文函数（按注册顺序）：chineseName / serviceName / methodName / paramHint */
     @GetMapping
-    public List<Map<String, String>> list() {
+    public List<Map<String, Object>> list() {
         return aliasRegistry.list();
     }
 }
