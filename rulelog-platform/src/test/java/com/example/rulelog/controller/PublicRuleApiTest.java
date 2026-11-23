@@ -26,6 +26,15 @@ class PublicRuleApiTest {
     @Autowired private JdbcTemplate jdbc;
 
     @Test
+    void seedScriptsAreMigratedOnStartup() throws Exception {
+        // 启动迁移：内置示例脚本（4 条）开箱即可从公开 API 读到
+        mvc.perform(get("/api/public/rules"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(4)))
+                .andExpect(jsonPath("$[?(@.id == 'vip_discount')]").exists());
+    }
+
+    @Test
     void saveSyncsToPublicApiAndCanRun() throws Exception {
         String ruleId = "pub_test_" + System.nanoTime();
         // 1. 平台保存脚本（admin 认证）
