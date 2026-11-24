@@ -3,7 +3,7 @@
     <!-- 数据池：点选复制引用，和独立比对页一致 -->
     <div class="cc-pool">
       <span class="cc-pool-title">可用数据（点选复制）</span>
-      <button v-for="p in dataPool" :key="p" class="cc-pool-chip" @click="copyExpr(p)">{{ p }}</button>
+      <button v-for="p in dataPool" :key="p.expr" class="cc-pool-chip" :title="p.hint" @click="copyExpr(p.expr)">{{ p.expr }}</button>
     </div>
 
     <!-- 取数节点 -->
@@ -29,8 +29,12 @@
           <option value="DERIVE">加工（QL脚本）</option>
         </select>
         <textarea v-if="n.sourceType === 'CONST' || n.sourceType === 'DERIVE'" v-model="n.sourceName" class="card-input cc-json" rows="2" :placeholder="n.sourceType === 'DERIVE' ? '返回 a * b;' : '订单数据 JSON'"></textarea>
+        <select v-else-if="n.sourceType === 'CONTEXT'" v-model="n.sourceName" class="card-input">
+          <option value="">请选择上游变量</option>
+          <option v-for="v in sourceNameOptions(n)" :key="v" :value="v">{{ v }}</option>
+        </select>
         <input v-else v-model="n.sourceName" class="card-input"
-               :placeholder="n.sourceType === 'SCRIPT' ? '脚本ID' : (n.sourceType === 'CONTEXT' ? '变量名，如 积分' : '中文函数名')" />
+               :placeholder="n.sourceType === 'SCRIPT' ? '脚本ID' : '中文函数名'" />
       </div>
       <div class="cc-map-row" v-for="(val, key) in n.paramMapping" :key="key">
         <input :value="key" class="card-input" @change="renameMap(n, key, $event.target.value)" placeholder="参数名" />
@@ -107,7 +111,10 @@
 import { computed, ref } from "vue";
 import { openCompareLibrary } from "../store.js";
 
-const props = defineProps({ card: { type: Object, required: true } });
+const props = defineProps({
+  card: { type: Object, required: true },
+  allCards: { type: Array, default: () => [] }
+});
 
 // 卡片内的规则配置（持久化到 meta.cards）
 if (!props.card.compareRule) {
@@ -138,14 +145,39 @@ const shownRows = computed(() => {
   return onlyDiff.value ? rows.filter(r => !r.consistent) : rows;
 });
 
+/** 本卡之前的取数卡产出的变量名（真正的数据联动来源） */
+const upstreamVars = computed(() => {
+  const idx = props.allCards.findIndex(c => c.id === props.card.id);
+  const before = idx < 0 ? props.allCards : props.allCards.slice(0, idx);
+  const names = [];
+  for (const c of before) {
+    if (c.varName && ["call", "prepcall", "calc"].includes(c.type)) names.push(c.varName);
+    if (c.type === "decisiontable" && c.resultVar) names.push(c.resultVar);
+  }
+  return [...new Set(names)];
+});
+
 const dataPool = computed(() => {
   const out = [];
   try {
-    for (const k of Object.keys(JSON.parse(props.card.contextJson || "{}") || {})) out.push("${" + k + "}");
+    for (const k of Object.keys(JSON.parse(props.card.contextJson || "{}") || {})) {
+      out.push({ expr: "${" + k + "}", hint: "运行上下文字段 " + k });
+    }
   } catch (e) { /* ignore */ }
-  for (const n of rule.value.fetchNodes) if (n.resultKey) out.push("${" + n.resultKey + "}");
-  return out;
+  for (const v of upstreamVars.value) out.push({ expr: "${" + v + "}", hint: "上游取数卡结果 " + v });
+  for (const n of rule.value.fetchNodes) {
+    if (n.resultKey) out.push({ expr: "${" + n.resultKey + "}", hint: (n.name || n.resultKey) + " 的取数结果" });
+  }
+  const seen = new Set();
+  return out.filter(x => seen.has(x.expr) ? false : (seen.add(x.expr), true));
 });
+
+/** 上游结果节点变量名下拉：保留当前值（即使上游卡被改名也能看出失联） */
+const sourceNameOptions = (n) => {
+  const opts = [...upstreamVars.value];
+  if (n.sourceName && !opts.includes(n.sourceName)) opts.unshift(n.sourceName);
+  return opts;
+};
 
 const copyExpr = async (expr) => {
   try { await navigator.clipboard.writeText(expr); } catch (e) { /* 剪贴板不可用时忽略 */ }

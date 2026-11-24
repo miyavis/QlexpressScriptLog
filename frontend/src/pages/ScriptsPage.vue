@@ -273,7 +273,7 @@
                             <span class="card-none">此卡片生成两行：参数定义行 + 服务调用行</span>
                           </template>
                           <template v-else-if="c.type === 'compare'">
-                            <CompareCard :card="c" />
+                            <CompareCard :card="c" :all-cards="canvasCards" />
                           </template>
                           <template v-else-if="c.type === 'decisiontable'">
                             <div class="decision-config">
