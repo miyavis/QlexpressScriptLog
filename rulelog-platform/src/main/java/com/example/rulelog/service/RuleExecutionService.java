@@ -192,20 +192,57 @@ public class RuleExecutionService {
         }
     }
 
+    private String fmtLogValue(Object v) {
+        if (v == null) return "null";
+        if (v instanceof java.util.Map || v instanceof java.util.Collection) {
+            try {
+                return com.example.rulelog.util.JsonUtils.mapper().writeValueAsString(v);
+            } catch (Exception e) {
+                return String.valueOf(v);
+            }
+        }
+        return String.valueOf(v);
+    }
+
     /** 把一次比对结果作为步骤追加到脚本执行记录（同一 traceId，执行记录里能一并看到） */
     public void appendCompareStep(RuleExecutionRecord record, String cardName,
                                   com.example.rulelog.compare.CompareResult result, Integer lineNo) {
         if (record == null || result == null) return;
         String detail = "比对 " + result.getTotalRows() + " 行，一致 " + result.getConsistentRows()
                 + "，不一致 " + result.getInconsistentRows() + "（不一致字段 " + result.getInconsistentCells() + "）";
-        StepLog step = new StepLog(record.getTraceId(), "比对引擎",
-                "比对: " + (cardName == null ? "比对卡" : cardName), detail, System.currentTimeMillis());
-        record.getRootSteps().add(step);
+        long now = System.currentTimeMillis();
+        java.util.List<StepLog> steps = new java.util.ArrayList<>();
+        steps.add(new StepLog(record.getTraceId(), "比对引擎",
+                "比对: " + (cardName == null ? "比对卡" : cardName), detail, now));
+
+        // 明细：逐行列出各数据源取值与字段比对结论
+        for (com.example.rulelog.compare.CompareRow row : result.getRows()) {
+            StringBuilder sb = new StringBuilder("Key=");
+            sb.append(row.getKey() == null ? "(空)" : row.getKey());
+            sb.append(" ");
+            for (java.util.Map.Entry<String, java.util.Map<String, Object>> e : row.getSourceValues().entrySet()) {
+                sb.append(e.getKey()).append("={");
+                if (e.getValue() != null) {
+                    for (java.util.Map.Entry<String, Object> v : e.getValue().entrySet()) {
+                        sb.append(v.getKey()).append("=").append(fmtLogValue(v.getValue())).append(", ");
+                    }
+                }
+                sb.append("} ");
+            }
+            for (java.util.Map.Entry<String, com.example.rulelog.compare.CompareRow.CellResult> c
+                    : row.getCells().entrySet()) {
+                sb.append(c.getKey()).append(c.getValue().isConsistent() ? " ✓" : " ✗");
+                sb.append("(").append(c.getValue().getDetail()).append(") ");
+            }
+            steps.add(new StepLog(record.getTraceId(), "比对引擎", "比对明细", sb.toString(), now + 1));
+        }
+
+        record.getRootSteps().addAll(steps);
         // 挂到比对卡对应的脚本行，右侧按行日志才能显示（并高亮对应卡片）
         if (lineNo != null) {
             com.example.rulelog.model.LineExecution line = record.getLineExecutions().get(Integer.valueOf(lineNo));
             if (line != null) {
-                line.getSteps().add(step);
+                line.getSteps().addAll(steps);
                 line.setHasActivity(true);
             }
         }

@@ -66,7 +66,9 @@ class PublicRuleApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.variables.积分").value(380))
                 .andExpect(jsonPath("$.rootSteps[0].serviceName").value("比对引擎"))
-                .andExpect(jsonPath("$.lineExecutions['2'].steps[0].serviceName").value("比对引擎"));
+                .andExpect(jsonPath("$.lineExecutions['2'].steps[0].serviceName").value("比对引擎"))
+                .andExpect(jsonPath("$.lineExecutions['2'].steps[1].stepName").value("比对明细"))
+                .andExpect(jsonPath("$.lineExecutions['2'].steps[1].detail").value(org.hamcrest.Matchers.containsString("A={value=")));
     }
 
     @Test
