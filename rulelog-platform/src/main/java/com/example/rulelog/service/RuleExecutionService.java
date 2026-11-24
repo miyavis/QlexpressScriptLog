@@ -194,13 +194,21 @@ public class RuleExecutionService {
 
     /** 把一次比对结果作为步骤追加到脚本执行记录（同一 traceId，执行记录里能一并看到） */
     public void appendCompareStep(RuleExecutionRecord record, String cardName,
-                                  com.example.rulelog.compare.CompareResult result) {
+                                  com.example.rulelog.compare.CompareResult result, Integer lineNo) {
         if (record == null || result == null) return;
         String detail = "比对 " + result.getTotalRows() + " 行，一致 " + result.getConsistentRows()
                 + "，不一致 " + result.getInconsistentRows() + "（不一致字段 " + result.getInconsistentCells() + "）";
         StepLog step = new StepLog(record.getTraceId(), "比对引擎",
                 "比对: " + (cardName == null ? "比对卡" : cardName), detail, System.currentTimeMillis());
         record.getRootSteps().add(step);
+        // 挂到比对卡对应的脚本行，右侧按行日志才能显示（并高亮对应卡片）
+        if (lineNo != null) {
+            com.example.rulelog.model.LineExecution line = record.getLineExecutions().get(Integer.valueOf(lineNo));
+            if (line != null) {
+                line.getSteps().add(step);
+                line.setHasActivity(true);
+            }
+        }
         recordStore.save(record);
     }
 

@@ -53,6 +53,10 @@ class PublicRuleApiTest {
         card.put("id", "c1"); card.put("type", "compare"); card.put("compareRule", rule);
         java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
         meta.put("cards", java.util.Collections.singletonList(card));
+        java.util.Map<String, Object> span = new java.util.LinkedHashMap<>();
+        span.put("cardId", "c1"); span.put("type", "compare");
+        span.put("startLine", 2); span.put("endLine", 2);
+        meta.put("cardSourceMap", java.util.Collections.singletonList(span));
         script.setMeta(meta);
         scriptStore.put(script);
 
@@ -61,7 +65,8 @@ class PublicRuleApiTest {
                         .content("{\"user\":\"张三\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.variables.积分").value(380))
-                .andExpect(jsonPath("$.rootSteps[0].serviceName").value("比对引擎"));
+                .andExpect(jsonPath("$.rootSteps[0].serviceName").value("比对引擎"))
+                .andExpect(jsonPath("$.lineExecutions['2'].steps[0].serviceName").value("比对引擎"));
     }
 
     @Test

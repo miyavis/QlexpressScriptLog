@@ -74,6 +74,7 @@
 .cmp-drill-title { font-size: 10.5px; font-weight: 700; color: var(--ink-500); margin-bottom: 5px; }
 .cmp-drill-link { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--accent); text-decoration: none; padding: 2px 0; word-break: break-all; }
 .cmp-drill-link:hover { text-decoration: underline; }
+.cc-hint { font-size: 10px; color: var(--ink-500); line-height: 1.5; margin-top: 6px; }
 .cmp-schedules { margin-top: 12px; border-top: 1px dashed var(--ink-300); padding-top: 6px; }
 .cmp-sched-add { display: flex; gap: 6px; margin-bottom: 6px; }
 .cmp-sched-add .card-input { flex: 1; min-width: 0; font-size: 11px; }

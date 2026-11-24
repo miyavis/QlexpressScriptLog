@@ -84,7 +84,24 @@ public class ExecutionController {
                 if (params != null) compareContext.putAll(params);
                 if (record.getVariables() != null) compareContext.putAll(record.getVariables());
                 com.example.rulelog.compare.CompareResult result = compareService.run(rule, compareContext);
-                ruleExecutionService.appendCompareStep(record, String.valueOf(card.getOrDefault("name", "比对卡")), result);
+
+                // 比对卡生成的脚本行号（来自 meta.cardSourceMap），让日志挂到对应行
+                Integer lineNo = null;
+                Object spans = script.getMeta().get("cardSourceMap");
+                if (spans instanceof List) {
+                    for (Object sp : (List<Object>) spans) {
+                        if (sp instanceof Map) {
+                            Map<String, Object> sm = (Map<String, Object>) sp;
+                            if (String.valueOf(card.get("id")).equals(String.valueOf(sm.get("cardId")))
+                                    && sm.get("startLine") instanceof Number) {
+                                lineNo = ((Number) sm.get("startLine")).intValue();
+                                break;
+                            }
+                        }
+                    }
+                }
+                ruleExecutionService.appendCompareStep(record,
+                        String.valueOf(card.getOrDefault("name", "比对卡")), result, lineNo);
             } catch (Exception e) {
                 org.slf4j.LoggerFactory.getLogger(ExecutionController.class)
                         .warn("比对卡执行失败 [{}]: {}", scriptId, e.getMessage());

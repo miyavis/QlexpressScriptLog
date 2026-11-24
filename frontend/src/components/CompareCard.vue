@@ -73,37 +73,7 @@
       <button class="btn-secondary sm" @click="rule.compareNode.fields.push({field:'',label:'',strategy:'equal',tolerance:0})">＋ 比对字段</button>
     </div>
 
-    <!-- 运行 -->
-    <div class="cc-section-head">③ 运行上下文</div>
-    <textarea v-model="card.contextJson" class="card-input cc-json" rows="2" placeholder='{"user":"张三"}'></textarea>
-    <div class="cc-run-row">
-      <button class="btn-primary sm" :disabled="running" @click="run">{{ running ? '比对中…' : '▶ 运行比对' }}</button>
-      <label class="cc-only-diff"><input type="checkbox" v-model="onlyDiff" /> 只看差异</label>
-    </div>
-
-    <template v-if="result">
-      <div class="cc-summary" :class="result.inconsistentRows ? 'bad' : 'good'">
-        {{ result.totalRows }} 行 · 一致 {{ result.consistentRows }} · 不一致 {{ result.inconsistentRows }} · {{ result.elapsedMillis }}ms
-      </div>
-      <table class="cc-table">
-        <thead><tr><th>Key</th><th v-for="f in rule.compareNode.fields" :key="f.field">{{ f.label || f.field }}</th><th>结论</th></tr></thead>
-        <tbody>
-          <tr v-for="(row, i) in shownRows" :key="i" :class="{bad:!row.consistent}">
-            <td>{{ row.key }}</td>
-            <td v-for="f in rule.compareNode.fields" :key="f.field">
-              <div v-for="(vals, sk) in row.sourceValues" :key="sk" class="cc-cell-val">
-                <span class="cc-src">{{ sk }}</span>{{ fmt(vals[f.field]) }}
-                <span :class="row.cells[f.field] && !row.cells[f.field].consistent ? 'bad-txt' : 'good-txt'">
-                  {{ row.cells[f.field] ? (row.cells[f.field].consistent ? '✓' : '✗') : '' }}
-                </span>
-              </div>
-            </td>
-            <td><span :class="row.consistent ? 'badge-good' : 'badge-bad'">{{ row.consistent ? '一致' : '不一致' }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-if="onlyDiff && !shownRows.length" class="cc-empty">没有差异 🎉</p>
-    </template>
+    <div class="cc-hint">配置完成后，点编辑器下方的「▶ 执行脚本」即可一次完成取数 + 比对；日志会显示在右侧执行日志中。</div>
   </div>
 </template>
 
@@ -127,9 +97,6 @@ if (!props.card.compareRule) {
 if (props.card.contextJson == null) props.card.contextJson = "{}";
 
 const rule = computed(() => props.card.compareRule);
-const result = ref(null);
-const running = ref(false);
-const onlyDiff = ref(false);
 const dragIdx = ref(null);
 const dropNode = (to) => {
   if (dragIdx.value === null || dragIdx.value === to) return;
@@ -139,11 +106,6 @@ const dropNode = (to) => {
   nodes.splice(to, 0, moved);
   dragIdx.value = null;
 };
-
-const shownRows = computed(() => {
-  const rows = result.value?.rows || [];
-  return onlyDiff.value ? rows.filter(r => !r.consistent) : rows;
-});
 
 /** 本卡之前的取数卡产出的变量名（真正的数据联动来源） */
 const upstreamVars = computed(() => {
@@ -213,28 +175,6 @@ const renameMap = (n, oldKey, newKey) => {
   n.paramMapping[newKey] = v;
 };
 
-const run = async () => {
-  let context;
-  try { context = JSON.parse(props.card.contextJson || "{}"); }
-  catch (e) { alert("运行上下文不是合法 JSON"); return; }
-  running.value = true;
-  result.value = null;
-  try {
-    const resp = await fetch("/api/compare-rules/run", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rule: rule.value, context })
-    });
-    const data = await resp.json();
-    if (!resp.ok || data.error) { alert(data.error || "比对失败"); return; }
-    result.value = data;
-  } catch (e) {
-    alert("比对执行失败：" + e.message);
-  } finally {
-    running.value = false;
-  }
-};
-
-const fmt = (v) => (v === null || v === undefined) ? "—" : (typeof v === "object" ? JSON.stringify(v) : String(v));
 </script>
 
 <style scoped>
