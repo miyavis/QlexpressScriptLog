@@ -27,7 +27,7 @@
           <option value="FUNCTION">调用函数</option>
           <option value="DERIVE">加工（QL脚本）</option>
         </select>
-        <textarea v-if="n.sourceType === 'CONST' || n.sourceType === 'DERIVE'" v-model="n.sourceName" class="card-input cc-json" rows="2" :placeholder="n.sourceType === 'DERIVE' ? '返回 a * b;' : '[{\"订单号\":\"O001\",\"金额\":100}]'"></textarea>
+        <textarea v-if="n.sourceType === 'CONST' || n.sourceType === 'DERIVE'" v-model="n.sourceName" class="card-input cc-json" rows="2" :placeholder="n.sourceType === 'DERIVE' ? '返回 a * b;' : '订单数据 JSON'"></textarea>
         <input v-else v-model="n.sourceName" class="card-input" :placeholder="n.sourceType === 'SCRIPT' ? '脚本ID' : '中文函数名'" />
       </div>
       <div class="cc-map-row" v-for="(val, key) in n.paramMapping" :key="key">
