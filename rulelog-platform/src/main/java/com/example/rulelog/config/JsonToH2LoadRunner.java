@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,7 @@ import java.util.List;
  * 供统一查询 / SDK / 对外 API 使用。这样换机器只拷 data 目录即可，H2 不需要持久化。
  */
 @Component
+@Order(1)
 public class JsonToH2LoadRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(JsonToH2LoadRunner.class);
@@ -54,16 +56,23 @@ public class JsonToH2LoadRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         log.info("H2 镜像数据目录: {}", dataDir.toAbsolutePath());
-        loadScripts();
-        loadExecutions();
-        loadCompareRules();
-        loadCompareRecords();
-        loadCompareSchedules();
+        reload("scripts.json", "QL_SCRIPT", Script::getId, Script::getName, s -> null,
+                Script::getUpdatedAt, new TypeReference<List<Script>>() {});
+        reload("executions.json", "QL_EXECUTION", RuleExecutionRecord::getTraceId, r -> null,
+                RuleExecutionRecord::getScriptId, RuleExecutionRecord::getStartTime,
+                new TypeReference<List<RuleExecutionRecord>>() {});
+        reload("compare-rules.json", "QL_COMPARE_RULE", CompareRule::getId, CompareRule::getName,
+                r -> null, CompareRule::getUpdatedAt, new TypeReference<List<CompareRule>>() {});
+        reload("compare-records.json", "QL_COMPARE_RECORD", CompareRecord::getId, CompareRecord::getRuleName,
+                CompareRecord::getRuleId, CompareRecord::getSavedAt, new TypeReference<List<CompareRecord>>() {});
+        reload("compare-schedules.json", "QL_COMPARE_SCHEDULE", CompareSchedule::getId, CompareSchedule::getName,
+                CompareSchedule::getRuleId, CompareSchedule::getCreatedAt, new TypeReference<List<CompareSchedule>>() {});
     }
 
+    /** JSON 文件不存在时返回 null，表示"不覆盖 H2 现有数据"；存在但解析失败返回空列表 */
     private <T> List<T> read(String file, TypeReference<List<T>> type) {
         Path f = dataDir.resolve(file);
-        if (!Files.exists(f)) return List.of();
+        if (!Files.exists(f)) return null;
         try {
             String json = new String(Files.readAllBytes(f), StandardCharsets.UTF_8);
             return JsonUtils.mapper().readValue(json, type);
@@ -71,6 +80,26 @@ public class JsonToH2LoadRunner implements ApplicationRunner {
             log.warn("读取 {} 失败，H2 镜像将为空: {}", f.toAbsolutePath(), e.getMessage());
             return List.of();
         }
+    }
+
+    /** 文件存在才用 JSON 覆盖 H2；不存在则保留 Store 预置的种子数据 */
+    private <T> void reload(String file, String table, java.util.function.Function<T, String> idOf,
+                            java.util.function.Function<T, String> nameOf,
+                            java.util.function.Function<T, String> ruleIdOf,
+                            java.util.function.ToLongFunction<T> sortOf,
+                            TypeReference<List<T>> type) {
+        List<T> items = read(file, type);
+        if (items == null) {
+            log.info("{} 不存在，保留 H2 {} 现有 {} 条", file, table, count(table));
+            return;
+        }
+        jdbc.update("DELETE FROM " + table);
+        for (T item : items) {
+            String id = idOf.apply(item);
+            if (id == null) continue;
+            upsert(table, id, nameOf.apply(item), ruleIdOf.apply(item), sortOf.applyAsLong(item), item);
+        }
+        log.info("H2 镜像 {}: {} 条（来自 {}）", table, count(table), file);
     }
 
     private void upsert(String table, String id, String name, String ruleId, long sortTime, Object data) {
@@ -91,49 +120,5 @@ public class JsonToH2LoadRunner implements ApplicationRunner {
         }
     }
 
-    private void loadScripts() {
-        // 启动时先清镜像，避免 JSON 里已删除的记录残留
-        jdbc.update("DELETE FROM QL_SCRIPT");
-        for (Script s : read("scripts.json", new TypeReference<List<Script>>() {})) {
-            if (s.getId() == null) continue;
-            upsert("QL_SCRIPT", s.getId(), s.getName(), null, s.getUpdatedAt(), s);
-        }
-        log.info("H2 镜像 QL_SCRIPT: {} 条", count("QL_SCRIPT"));
-    }
-
-    private void loadExecutions() {
-        jdbc.update("DELETE FROM QL_EXECUTION");
-        for (RuleExecutionRecord r : read("executions.json", new TypeReference<List<RuleExecutionRecord>>() {})) {
-            if (r.getTraceId() == null) continue;
-            upsert("QL_EXECUTION", r.getTraceId(), null, r.getScriptId(), r.getStartTime(), r);
-        }
-        log.info("H2 镜像 QL_EXECUTION: {} 条", count("QL_EXECUTION"));
-    }
-
-    private void loadCompareRules() {
-        jdbc.update("DELETE FROM QL_COMPARE_RULE");
-        for (CompareRule r : read("compare-rules.json", new TypeReference<List<CompareRule>>() {})) {
-            if (r.getId() == null) continue;
-            upsert("QL_COMPARE_RULE", r.getId(), r.getName(), null, r.getUpdatedAt(), r);
-        }
-        log.info("H2 镜像 QL_COMPARE_RULE: {} 条", count("QL_COMPARE_RULE"));
-    }
-
-    private void loadCompareRecords() {
-        jdbc.update("DELETE FROM QL_COMPARE_RECORD");
-        for (CompareRecord r : read("compare-records.json", new TypeReference<List<CompareRecord>>() {})) {
-            if (r.getId() == null) continue;
-            upsert("QL_COMPARE_RECORD", r.getId(), r.getRuleName(), r.getRuleId(), r.getSavedAt(), r);
-        }
-        log.info("H2 镜像 QL_COMPARE_RECORD: {} 条", count("QL_COMPARE_RECORD"));
-    }
-
-    private void loadCompareSchedules() {
-        jdbc.update("DELETE FROM QL_COMPARE_SCHEDULE");
-        for (CompareSchedule s : read("compare-schedules.json", new TypeReference<List<CompareSchedule>>() {})) {
-            if (s.getId() == null) continue;
-            upsert("QL_COMPARE_SCHEDULE", s.getId(), s.getName(), s.getRuleId(), s.getCreatedAt(), s);
-        }
-        log.info("H2 镜像 QL_COMPARE_SCHEDULE: {} 条", count("QL_COMPARE_SCHEDULE"));
-    }
 }
+

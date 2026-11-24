@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
  * 只做新增/更新，不删 QL_RULE 中脚本文件里已不存在的规则（避免误删外部写入）。
  */
 @Component
+@Order(2)
 public class RuleMigrationRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(RuleMigrationRunner.class);

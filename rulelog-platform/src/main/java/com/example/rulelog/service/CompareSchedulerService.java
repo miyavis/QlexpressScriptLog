@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +27,7 @@ import java.util.concurrent.ScheduledFuture;
  * 启动时恢复所有启用的任务；配置变更后立即重排。
  */
 @Service
+@Order(3)
 public class CompareSchedulerService implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(CompareSchedulerService.class);

@@ -1,240 +1,78 @@
 package com.example.rulelog.store;
 
 import com.example.rulelog.model.Script;
-import com.example.rulelog.util.JsonUtils;
-import com.fasterxml.jackson.core.type.TypeReference;
+import org.h2.jdbcx.JdbcDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 脚本持久化：JSON 文件（data/scripts.json）。
+ * 脚本持久化：运行时读写 H2 的 QL_SCRIPT 表。
  *
- * 每次增删改立即落盘；首次启动无文件时写入内置示例脚本。
- * 注意：data-dir 为相对路径时按“后端启动时的工作目录”解析，
- * 换机器/换目录启动时如希望固定位置，请在 application.yml 配置绝对路径。
+ * 启动初始化由 JsonToH2LoadRunner 完成（data/scripts.json → H2）；
+ * 若 H2 为空（首次启动 / 单测），这里写入内置示例脚本。
  */
 @Component
 public class ScriptStore {
 
     private static final Logger log = LoggerFactory.getLogger(ScriptStore.class);
+    private static final String DDL = "CREATE TABLE IF NOT EXISTS QL_SCRIPT ("
+            + "ID VARCHAR(64) PRIMARY KEY, NAME VARCHAR(128), RULE_ID VARCHAR(64), "
+            + "SORT_TIME BIGINT, DATA CLOB)";
 
-    private final Path dataDir;
+    private final H2JsonTable table;
 
-    private final Map<String, Script> scripts = new LinkedHashMap<>();
-
-    public ScriptStore(@Value("${app.data-dir:data}") String dataDir) {
-        this.dataDir = resolveDataDir(dataDir);
-        log.info("脚本数据目录（解析后绝对路径）: {}", getStoreFile().toAbsolutePath());
-        loadOrCreate();
+    @Autowired
+    public ScriptStore(JdbcTemplate jdbc) {
+        this.table = new H2JsonTable(jdbc, "QL_SCRIPT", DDL);
+        if (table.count() == 0) {
+            for (Script s : defaultScripts()) {
+                table.upsert(s.getId(), s.getName(), null, s.getUpdatedAt(), s);
+            }
+            log.info("H2 脚本表为空，已写入 {} 条内置示例", defaultScripts().size());
+        }
     }
 
-    // ---------- 路径解析 ----------
-
-    /**
-     * 解析数据目录：
-     * - 绝对路径：直接使用；
-     * - 相对路径：锚定“应用所在目录”——开发运行时=项目根目录（target 的上一级），
-     *   打成 jar 运行时=jar 所在目录。这样项目拷到任何机器/任何目录，data 相对路径都有效，
-     *   不再依赖启动命令时的工作目录。
-     */
-    private Path resolveDataDir(String dataDir) {
-        Path configured = Paths.get(dataDir);
-        if (configured.isAbsolute()) {
-            return configured;
-        }
-        return applicationHome().resolve(configured).normalize();
+    /** 测试构造：独立内存 H2 实例 */
+    public ScriptStore(String ignoredDataDir) {
+        this(testJdbc("scriptstore"));
     }
 
-    /** 应用所在目录：开发时=项目根，打包 jar 时=jar 所在目录；解析失败退回到当前工作目录。
-     *  用 Spring Boot 的 ApplicationHome 定位——它正确处理可执行 jar（含 Boot3 的嵌套 jar/nested URI），
-     *  直接用 getProtectionDomain().getCodeSource() 在 Boot3 的 jar 里会返回 zipfs URI 导致 ProviderMismatchException。 */
-    private Path applicationHome() {
-        try {
-            org.springframework.boot.system.ApplicationHome home =
-                    new org.springframework.boot.system.ApplicationHome(ScriptStore.class);
-            Path dir = home.getDir() == null ? null : home.getDir().toPath();
-            if (dir == null) {
-                return Paths.get("").toAbsolutePath();
-            }
-            String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
-            // 开发环境（IDE / bootRun）：…/build/classes/java/main（或 target/classes）→ 回退到项目根
-            if (name.equals("classes") || name.endsWith(".classes")) {
-                Path parent = dir.getParent();
-                if (parent != null && parent.getFileName() != null
-                        && (parent.getFileName().toString().equals("target")
-                            || parent.getFileName().toString().equals("java"))) {
-                    Path root = parent.getFileName().toString().equals("java")
-                            ? parent.getParent().getParent().getParent() // build/classes/java/main → 项目根
-                            : parent.getParent();                          // target/classes → 项目根
-                    if (root != null) return root;
-                }
-            }
-            return dir;
-        } catch (Exception e) {
-            return Paths.get("").toAbsolutePath();
-        }
+    static JdbcTemplate testJdbc(String prefix) {
+        JdbcDataSource ds = new JdbcDataSource();
+        ds.setURL("jdbc:h2:mem:" + prefix + "_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1");
+        return new JdbcTemplate(ds);
     }
 
     public List<Script> list() {
-        synchronized (scripts) {
-            List<Script> all = new ArrayList<>();
-            for (Script s : scripts.values()) {
-                all.add(deepCopy(s));
-            }
-            all.sort(Comparator.comparingLong(Script::getUpdatedAt).reversed());
-            return all;
-        }
+        return table.all(Script.class, 10000);
     }
 
-    /**
-     * 获取脚本：返回深拷贝，避免外部持有活引用——
-     * Controller 会在锁外逐字段修改，若返回内部对象，并发 GET 可能读到"改到一半"的脚本。
-     */
     public Script get(String id) {
-        synchronized (scripts) {
-            Script found = scripts.get(id);
-            return found == null ? null : deepCopy(found);
-        }
-    }
-
-    /** 借助 Jackson 做深拷贝（简单可靠，脚本对象字段均为可序列化类型） */
-    private Script deepCopy(Script s) {
-        try {
-            String json = com.example.rulelog.util.JsonUtils.mapper().writeValueAsString(s);
-            return com.example.rulelog.util.JsonUtils.mapper().readValue(json, Script.class);
-        } catch (Exception e) {
-            // 极端情况降级：返回浅拷贝（至少 id/name/content 等基本字段可用）
-            Script copy = new Script();
-            copy.setId(s.getId());
-            copy.setName(s.getName());
-            copy.setContent(s.getContent());
-            copy.setDefaultParams(s.getDefaultParams());
-            copy.setMeta(s.getMeta());
-            copy.setVersions(s.getVersions());
-            copy.setCreatedAt(s.getCreatedAt());
-            copy.setUpdatedAt(s.getUpdatedAt());
-            copy.setPublishedVersion(s.getPublishedVersion());
-            copy.setBranch(s.getBranch());
-            copy.setReviewStatus(s.getReviewStatus());
-            copy.setEnvironment(s.getEnvironment());
-            return copy;
-        }
+        return table.get(id, Script.class);
     }
 
     public void put(Script script) {
-        synchronized (scripts) {
-            scripts.put(script.getId(), script);
-            save();
+        if (script.getId() == null || script.getId().trim().isEmpty()) {
+            script.setId("script_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16));
         }
+        if (script.getCreatedAt() == 0) script.setCreatedAt(System.currentTimeMillis());
+        script.setUpdatedAt(System.currentTimeMillis());
+        table.upsert(script.getId(), script.getName(), null, script.getUpdatedAt(), script);
     }
 
     public boolean remove(String id) {
-        synchronized (scripts) {
-            boolean removed = scripts.remove(id) != null;
-            if (removed) {
-                save();
-            }
-            return removed;
-        }
+        return table.delete(id);
     }
 
-    // ---------- 内部 ----------
-
-    private void loadOrCreate() {
-        Path file = getStoreFile();
-        if (!Files.exists(file)) {
-            log.info("脚本文件不存在，写入内置示例脚本: {}", file.toAbsolutePath());
-            loadDefaults();
-            return;
-        }
-        try {
-            List<Script> loaded = JsonUtils.mapper()
-                    .readValue(file.toFile(), new TypeReference<List<Script>>() {
-                    });
-            synchronized (scripts) {
-                scripts.clear();
-                for (Script s : loaded) {
-                    scripts.put(s.getId(), s);
-                }
-            }
-            log.info("已加载 {} 个脚本: {}", loaded.size(), file.toAbsolutePath());
-        } catch (Exception e) {
-            handleCorruptedFile(file, e);
-        }
-    }
-
-    /** 文件损坏：备份坏文件并改用内置示例启动，日志给出恢复指引 */
-    private void handleCorruptedFile(Path file, Exception cause) {
-        Path backup = file.resolveSibling("scripts.json.bak-" + System.currentTimeMillis());
-        try {
-            Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException moveEx) {
-            log.warn("备份损坏的脚本文件失败: {}", file.toAbsolutePath(), moveEx);
-        }
-        log.error("scripts.json 解析失败（可能是文件损坏/编码问题/手工编辑出错），"
-                        + "坏文件已备份到: {} ；本次启动改用内置示例脚本。"
-                        + "请检查文件后重命名回 scripts.json 再重启即可恢复。原文件: {}",
-                backup.toAbsolutePath(), file.toAbsolutePath(), cause);
-        loadDefaults();
-    }
-
-    /** 清空并用内置示例脚本填充内存，随即落盘 */
-    private void loadDefaults() {
-        synchronized (scripts) {
-            scripts.clear();
-            for (Script s : defaultScripts()) {
-                scripts.put(s.getId(), s);
-            }
-            save();
-        }
-    }
-
-    private void save() {
-        Path file = getStoreFile();
-        try {
-            Files.createDirectories(file.getParent());
-            List<Script> snapshot;
-            synchronized (scripts) {
-                snapshot = new ArrayList<>(scripts.values());
-            }
-            String json = JsonUtils.pretty(snapshot);
-            // 原子写：先写同目录临时文件，再 ATOMIC_MOVE 覆盖目标。
-            // 避免写到一半崩溃/断电留下半截 JSON，下次启动误判为损坏而丢全量脚本。
-            Path tmp = Files.createTempFile(file.getParent(), "scripts-", ".tmp");
-            try {
-                Files.write(tmp, json.getBytes(StandardCharsets.UTF_8));
-                try {
-                    Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } catch (IOException moveEx) {
-                    // 原子移动失败（不支持 / Windows 文件锁偶发拒绝）→ 降级普通覆盖
-                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-                }
-            } finally {
-                Files.deleteIfExists(tmp);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("保存脚本文件失败: " + file.toAbsolutePath(), e);
-        }
-    }
-
-    private Path getStoreFile() {
-        return dataDir.resolve("scripts.json");
-    }
+    // ---------------- 内置示例 ----------------
 
     private List<Script> defaultScripts() {
         long now = System.currentTimeMillis();
@@ -244,8 +82,7 @@ public class ScriptStore {
         vip.setId("vip_discount");
         vip.setName("VIP 折扣判定");
         vip.setContent("等级 = 查询用户等级(user);\n"
-                + "记录日志(\"等级查询完成\", \"等级=\" + 等级);\n"
-                + "\n"
+                + "记录日志(\"等级查询完成\", \"等级=\" + 等级);\n\n"
                 + "如果 (等级 等于 \"VIP\") 则 {\n"
                 + "    记录日志(\"进入VIP分支\", \"准备调用折扣服务\");\n"
                 + "    返回 计算折扣(user);\n"
@@ -254,36 +91,30 @@ public class ScriptStore {
                 + "    返回 0;\n"
                 + "}");
         vip.getDefaultParams().put("user", "张三");
-        vip.setCreatedAt(now);
-        vip.setUpdatedAt(now);
+        vip.setCreatedAt(now); vip.setUpdatedAt(now);
         seeds.add(vip);
 
         Script points = new Script();
         points.setId("points_double");
         points.setName("积分翻倍");
         points.setContent("积分 = 查询用户积分(user);\n"
-                + "记录日志(\"积分查询完成\", \"积分=\" + 积分);\n"
-                + "\n"
+                + "记录日志(\"积分查询完成\", \"积分=\" + 积分);\n\n"
                 + "如果 (积分 大于 100) 则 {\n"
                 + "    打折积分 = 积分 * 2;\n"
                 + "} 否则 {\n"
                 + "    打折积分 = 积分;\n"
-                + "}\n"
-                + "\n"
+                + "}\n\n"
                 + "返回 打折积分;");
         points.getDefaultParams().put("user", "张三");
-        points.setCreatedAt(now);
-        points.setUpdatedAt(now);
+        points.setCreatedAt(now); points.setUpdatedAt(now);
         seeds.add(points);
 
-        // 多行卡样例：一张「带参取数卡」生成两行（参数定义行 + 服务调用行）
         Script prepCall = new Script();
         prepCall.setId("prepcall_demo");
         prepCall.setName("带参取数演示（一卡两行）");
         prepCall.setContent("查询用户 = user;\n"
                 + "积分 = 查询用户积分(查询用户);\n"
-                + "记录日志(\"积分查询完成\", \"积分=\" + 积分);\n"
-                + "\n"
+                + "记录日志(\"积分查询完成\", \"积分=\" + 积分);\n\n"
                 + "如果 (积分 大于 100) 则 {\n"
                 + "    折扣依据 = user;\n"
                 + "    折扣 = 计算折扣(折扣依据);\n"
@@ -293,11 +124,9 @@ public class ScriptStore {
                 + "    返回 积分;\n"
                 + "}");
         prepCall.getDefaultParams().put("user", "张三");
-        prepCall.setCreatedAt(now);
-        prepCall.setUpdatedAt(now);
+        prepCall.setCreatedAt(now); prepCall.setUpdatedAt(now);
         seeds.add(prepCall);
 
-        // 决策表演示：画布模式直接显示一张决策表卡（带完整 meta，contentHash 匹配才不会退化成普通卡）
         Script decision = new Script();
         decision.setId("decision_table_demo");
         decision.setName("决策表演示（会员折扣）");
@@ -316,93 +145,26 @@ public class ScriptStore {
         decision.setContent(decisionScript);
         decision.setDefaultParams(new java.util.LinkedHashMap<>(java.util.Collections.singletonMap("user", "张三")));
         decision.setMeta(buildDemoDecisionMeta(decisionScript));
-        decision.setCreatedAt(now);
-        decision.setUpdatedAt(now);
+        decision.setCreatedAt(now); decision.setUpdatedAt(now);
         seeds.add(decision);
 
-        // 取数 + 比对双卡演示：画布里同时有「取数卡」和「比对卡」，比对卡自带样例数据可直接运行
+        String compareScript = "等级 = 查询用户等级(user);\n返回 等级;";
         Script compare = new Script();
         compare.setId("compare_demo");
         compare.setName("取数 + 比对演示（双卡）");
-        String compareScript = "等级 = 查询用户等级(user);\n返回 等级;";
         compare.setContent(compareScript);
         compare.setDefaultParams(new java.util.LinkedHashMap<>(java.util.Collections.singletonMap("user", "张三")));
         compare.setMeta(buildDemoCompareMeta(compareScript));
-        compare.setCreatedAt(now);
-        compare.setUpdatedAt(now);
+        compare.setCreatedAt(now); compare.setUpdatedAt(now);
         seeds.add(compare);
 
         return seeds;
     }
 
-    /** 构造双卡演示的画布 meta：取数卡 + 比对卡 + 返回卡 */
-    private Map<String, Object> buildDemoCompareMeta(String script) {
-        java.util.List<Map<String, Object>> cards = new ArrayList<>();
-        cards.add(card("cc1", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
-
-        // 比对卡：两份内置订单数据，按订单号对齐，金额容差 2
-        Map<String, Object> a = new LinkedHashMap<>();
-        a.put("id", "fa"); a.put("name", "取数A");
-        a.put("sourceType", "CONST");
-        a.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":100,\"等级\":\"VIP\"},"
-                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
-        a.put("resultKey", "A");
-        a.put("paramMapping", new LinkedHashMap<>());
-        a.put("dependsOn", new ArrayList<>());
-
-        Map<String, Object> b = new LinkedHashMap<>();
-        b.put("id", "fb"); b.put("name", "取数B");
-        b.put("sourceType", "CONST");
-        b.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":103,\"等级\":\"VIP\"},"
-                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
-        b.put("resultKey", "B");
-        b.put("paramMapping", new LinkedHashMap<>());
-        b.put("dependsOn", new ArrayList<>());
-
-        Map<String, Object> amount = new LinkedHashMap<>();
-        amount.put("field", "金额"); amount.put("label", "金额");
-        amount.put("strategy", "numericTolerance"); amount.put("tolerance", 2);
-        Map<String, Object> level = new LinkedHashMap<>();
-        level.put("field", "等级"); level.put("label", "等级");
-        level.put("strategy", "equal"); level.put("tolerance", 0);
-
-        Map<String, Object> compareNode = new LinkedHashMap<>();
-        compareNode.put("keyField", "订单号");
-        compareNode.put("sourceKeys", java.util.Arrays.asList("A", "B"));
-        compareNode.put("fields", java.util.Arrays.asList(amount, level));
-
-        Map<String, Object> compareRule = new LinkedHashMap<>();
-        compareRule.put("name", "订单双源对账");
-        compareRule.put("fetchNodes", java.util.Arrays.asList(a, b));
-        compareRule.put("compareNode", compareNode);
-
-        Map<String, Object> compareCardFields = new LinkedHashMap<>();
-        compareCardFields.put("contextJson", "{\"user\":\"张三\"}");
-        compareCardFields.put("compareRule", compareRule);
-        cards.add(card("cc2", "compare", compareCardFields));
-
-        cards.add(card("cc3", "return", fields("expr", "等级")));
-
-        java.util.List<Map<String, Object>> sourceMap = new ArrayList<>();
-        sourceMap.add(span("cc1", "call", 1, 1));
-        Map<String, Object> emptySpan = span("cc2", "compare", 2, 1);
-        emptySpan.put("empty", true);
-        sourceMap.add(emptySpan);
-        sourceMap.add(span("cc3", "return", 2, 2));
-
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("cards", cards);
-        meta.put("cardSourceMap", sourceMap);
-        meta.put("contentHash", com.example.rulelog.util.ContentHash.hashContent(script));
-        return meta;
-    }
-
-    /** 构造决策表演示的画布 meta：4 张卡 + 行号映射 + contentHash（与前端一致） */
     private Map<String, Object> buildDemoDecisionMeta(String script) {
         java.util.List<Map<String, Object>> cards = new ArrayList<>();
         cards.add(card("c1", "call", fields("varName", "积分", "func", "查询用户积分", "param", "user")));
         cards.add(card("c2", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
-        // 决策表卡：First 策略，两条件两行
         Map<String, Object> row1 = new LinkedHashMap<>();
         row1.put("cells", java.util.Arrays.asList("> 100", "== \"VIP\""));
         row1.put("result", "0.7");
@@ -431,30 +193,72 @@ public class ScriptStore {
         return meta;
     }
 
+    private Map<String, Object> buildDemoCompareMeta(String script) {
+        java.util.List<Map<String, Object>> cards = new ArrayList<>();
+        cards.add(card("cc1", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
+
+        Map<String, Object> a = new LinkedHashMap<>();
+        a.put("id", "fa"); a.put("name", "取数A"); a.put("sourceType", "CONST");
+        a.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":100,\"等级\":\"VIP\"},"
+                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
+        a.put("resultKey", "A"); a.put("paramMapping", new LinkedHashMap<>()); a.put("dependsOn", new ArrayList<>());
+
+        Map<String, Object> b = new LinkedHashMap<>();
+        b.put("id", "fb"); b.put("name", "取数B"); b.put("sourceType", "CONST");
+        b.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":103,\"等级\":\"VIP\"},"
+                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
+        b.put("resultKey", "B"); b.put("paramMapping", new LinkedHashMap<>()); b.put("dependsOn", new ArrayList<>());
+
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("field", "金额"); amount.put("label", "金额");
+        amount.put("strategy", "numericTolerance"); amount.put("tolerance", 2);
+        Map<String, Object> level = new LinkedHashMap<>();
+        level.put("field", "等级"); level.put("label", "等级");
+        level.put("strategy", "equal"); level.put("tolerance", 0);
+        Map<String, Object> cmp = new LinkedHashMap<>();
+        cmp.put("keyField", "订单号");
+        cmp.put("sourceKeys", java.util.Arrays.asList("A", "B"));
+        cmp.put("fields", java.util.Arrays.asList(amount, level));
+        Map<String, Object> rule = new LinkedHashMap<>();
+        rule.put("name", "订单双源对账");
+        rule.put("fetchNodes", java.util.Arrays.asList(a, b));
+        rule.put("compareNode", cmp);
+        Map<String, Object> cf = new LinkedHashMap<>();
+        cf.put("contextJson", "{\"user\":\"张三\"}");
+        cf.put("compareRule", rule);
+        cards.add(card("cc2", "compare", cf));
+        cards.add(card("cc3", "return", fields("expr", "等级")));
+
+        java.util.List<Map<String, Object>> sourceMap = new ArrayList<>();
+        sourceMap.add(span("cc1", "call", 1, 1));
+        Map<String, Object> es = span("cc2", "compare", 2, 1);
+        es.put("empty", true);
+        sourceMap.add(es);
+        sourceMap.add(span("cc3", "return", 2, 2));
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("cards", cards);
+        meta.put("cardSourceMap", sourceMap);
+        meta.put("contentHash", com.example.rulelog.util.ContentHash.hashContent(script));
+        return meta;
+    }
+
     private Map<String, Object> card(String id, String type, Map<String, Object> fields) {
         Map<String, Object> c = new LinkedHashMap<>();
-        c.put("id", id);
-        c.put("type", type);
-        c.putAll(fields);
+        c.put("id", id); c.put("type", type); c.putAll(fields);
         return c;
     }
 
-    /** 简易 key-value 构造（值成对传入） */
     private Map<String, Object> fields(Object... kv) {
         Map<String, Object> m = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < kv.length; i += 2) {
-            m.put((String) kv[i], kv[i + 1]);
-        }
+        for (int i = 0; i + 1 < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
         return m;
     }
 
     private Map<String, Object> span(String cardId, String type, int start, int end) {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("cardId", cardId);
-        m.put("type", type);
-        m.put("startLine", start);
-        m.put("endLine", end);
-        m.put("empty", false);
+        m.put("cardId", cardId); m.put("type", type);
+        m.put("startLine", start); m.put("endLine", end); m.put("empty", false);
         return m;
     }
 }

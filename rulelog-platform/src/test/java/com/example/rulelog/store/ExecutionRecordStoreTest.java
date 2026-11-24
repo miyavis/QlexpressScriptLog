@@ -18,6 +18,7 @@ class ExecutionRecordStoreTest {
         RuleExecutionRecord r = new RuleExecutionRecord();
         r.setTraceId(traceId);
         r.setScriptId(scriptId);
+        r.setStartTime(Long.parseLong(traceId.substring(1)) * 1000L);
         return r;
     }
 

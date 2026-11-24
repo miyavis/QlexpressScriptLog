@@ -4,7 +4,10 @@ import com.example.rulelog.engine.Result;
 import com.example.rulelog.engine.RuleEngine;
 import com.example.rulelog.loader.JdbcRuleLoader;
 import com.example.rulelog.loader.RuleDefinition;
+import com.example.rulelog.model.RuleExecutionRecord;
 import com.example.rulelog.param.ParamDef;
+import com.example.rulelog.param.ParamValidator;
+import com.example.rulelog.service.RuleExecutionService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,12 +29,14 @@ public class PublicRuleController {
     private final JdbcRuleLoader loader;
     private final RuleEngine engine;
     private final JdbcTemplate jdbc;
+    private final RuleExecutionService executionService;
 
-    public PublicRuleController(DataSource dataSource, JdbcTemplate jdbc) {
+    public PublicRuleController(DataSource dataSource, JdbcTemplate jdbc, RuleExecutionService executionService) {
         this.loader = JdbcRuleLoader.builder().dataSource(dataSource).build();
-        // 公开 API 的执行：runner 无业务函数（纯脚本入参场景）；追踪 traceId 由 engine.runById 生成
         this.engine = RuleEngine.builder().loader(loader).build();
         this.jdbc = jdbc;
+        // 执行走平台执行服务：自动带上注解注册的中文业务函数、StepLogger 调用链与 traceId
+        this.executionService = executionService;
     }
 
     /** 规则列表 */
@@ -77,11 +82,31 @@ public class PublicRuleController {
         @SuppressWarnings("unchecked")
         Map<String, Object> params = body.get("params") instanceof Map
                 ? (Map<String, Object>) body.get("params") : Collections.emptyMap();
-        Result r = engine.runById(ruleId.trim(), params);
-        out.put("success", r.isSuccess());
-        out.put("result", r.getValue());
-        out.put("traceId", r.getTraceId());
-        if (!r.isSuccess()) out.put("error", r.getError());
+
+        // 从 QL_RULE 加载规则定义（含参数契约）
+        RuleDefinition def = loader.load(ruleId.trim());
+        if (def == null) {
+            out.put("success", false);
+            out.put("error", "规则不存在: " + ruleId);
+            return out;
+        }
+        List<String> errors = ParamValidator.validate(def.getParams(), params);
+        if (!errors.isEmpty()) {
+            out.put("success", false);
+            out.put("error", "参数校验失败: " + String.join("; ", errors));
+            return out;
+        }
+        // 用平台执行服务执行：业务函数已由 @RuleFunction 注解注册，并生成可下钻的执行记录
+        try {
+            RuleExecutionRecord rec = executionService.runByContent(def.getId(), def.getContent(), params);
+            out.put("success", rec.isSuccess());
+            out.put("result", rec.getResult());
+            out.put("traceId", rec.getTraceId());
+            if (!rec.isSuccess()) out.put("error", rec.getErrorMessage());
+        } catch (Exception e) {
+            out.put("success", false);
+            out.put("error", e.getMessage() == null ? e.toString() : e.getMessage());
+        }
         return out;
     }
 }

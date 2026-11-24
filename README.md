@@ -275,7 +275,7 @@ POST /api/public/run                    执行
 ```
 三个接口均公开访问；`traceId` 可用于在平台内下钻完整执行日志。建表 DDL 见 `rulelog-core/src/main/resources/sql/`。
 
-**H2 数据镜像**：`data/*.json` 仍是唯一事实源（写操作照旧落 JSON）；每次启动由 `JsonToH2LoadRunner` 把脚本、执行记录、比对规则/历史/定时任务全量灌入 H2 镜像表，`QL_RULE` 同时由 `RuleMigrationRunner` 同步。可通过 `GET /api/public/data-stats` 查看各表行数验证加载结果。
+**H2 数据层**：`data/*.json` 是固定种子（文件不会随运行改变）；每次启动由 `JsonToH2LoadRunner` 把脚本、执行记录、比对规则/历史/定时任务全量灌入 H2，**运行时所有读写都走 H2**（`QL_SCRIPT` / `QL_EXECUTION` / `QL_COMPARE_*`），`QL_RULE` 同时由 `RuleMigrationRunner` 同步。可通过 `GET /api/public/data-stats` 查看各表行数验证加载结果。注意：运行时产生的新数据只存在于本次进程的 H2 中，重启后由 JSON 种子重新初始化。
 
 ### 比对画布（P2）
 

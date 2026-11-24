@@ -14,14 +14,17 @@ public class CompareRow {
     private boolean consistent = true;                    // 整行是否全一致
 
     public static class CellResult {
-        private final boolean consistent;
-        private final String detail;
+        private boolean consistent;
+        private String detail;
+        public CellResult() { }
         public CellResult(boolean consistent, String detail) {
             this.consistent = consistent;
             this.detail = detail;
         }
         public boolean isConsistent() { return consistent; }
+        public void setConsistent(boolean consistent) { this.consistent = consistent; }
         public String getDetail() { return detail; }
+        public void setDetail(String detail) { this.detail = detail; }
     }
 
     // ---------- getters / setters ----------

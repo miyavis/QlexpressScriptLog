@@ -26,6 +26,18 @@ class PublicRuleApiTest {
     @Autowired private JdbcTemplate jdbc;
 
     @Test
+    void publicRunSupportsBusinessFunctions() throws Exception {
+        // 公开 API 执行带中文业务函数的规则（此前会因函数未注册而失败）
+        mvc.perform(post("/api/public/run")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rule\":\"points_double\",\"params\":{\"user\":\"张三\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.result").value(760))
+                .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    @Test
     void allJsonDataIsLoadedIntoH2OnStartup() throws Exception {
         mvc.perform(get("/api/public/data-stats"))
                 .andExpect(status().isOk())
