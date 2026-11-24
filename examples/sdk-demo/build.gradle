@@ -1,0 +1,27 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.example.demo'
+version = '1.0.0'
+
+// 本地验证用 mavenLocal（JitPack 发布需仓库 owner 确认后才启用）
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.github.miyavis:rulelog-core:1.1.6-SNAPSHOT'
+    implementation 'com.h2database:h2:2.1.214'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+application {
+    mainClass = 'com.example.demo.SdkDemo'
+}
