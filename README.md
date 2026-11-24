@@ -203,7 +203,7 @@ npm run dev
 
 ```bash
 ./gradlew buildFrontend bootJar    # 一条命令：构建前端 dist → 内嵌进 jar
-java -Dfile.encoding=UTF-8 -jar build/libs/rule-log-1.1.0.jar
+java -Dfile.encoding=UTF-8 -jar rulelog-platform/build/libs/rule-log-1.1.6.jar
 ```
 
 （也可先 `cd frontend && npm run build`，再 `./gradlew bootJar`——dist 已存在时 bootJar 直接内嵌，不存在时打纯 API jar，构建不报错。）

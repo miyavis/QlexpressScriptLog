@@ -11,9 +11,10 @@ FROM gradle:7.6.4-jdk17 AS backend
 WORKDIR /workspace
 COPY . .
 COPY --from=frontend /workspace/frontend/dist ./frontend/dist
+# 多模块后 fat jar 产自 rulelog-platform 子模块（不是根目录 build/libs）
 RUN chmod +x ./gradlew \
-    && ./gradlew bootJar --no-daemon \
-    && find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' -exec cp {} /workspace/app.jar \;
+    && ./gradlew :rulelog-platform:bootJar --no-daemon \
+    && find rulelog-platform/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' -exec cp {} /workspace/app.jar \;
 
 # Keep the runtime image small; Java 17 runs this Java 17-targeted application.
 FROM eclipse-temurin:17-jre-alpine
