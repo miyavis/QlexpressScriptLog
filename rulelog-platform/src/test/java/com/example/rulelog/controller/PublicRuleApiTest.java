@@ -26,6 +26,17 @@ class PublicRuleApiTest {
     @Autowired private JdbcTemplate jdbc;
 
     @Test
+    void allJsonDataIsLoadedIntoH2OnStartup() throws Exception {
+        mvc.perform(get("/api/public/data-stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.QL_RULE").value(org.hamcrest.Matchers.greaterThanOrEqualTo(5)))
+                .andExpect(jsonPath("$.QL_SCRIPT").value(org.hamcrest.Matchers.greaterThanOrEqualTo(5)))
+                .andExpect(jsonPath("$.QL_COMPARE_RULE").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.QL_COMPARE_RECORD").value(org.hamcrest.Matchers.greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.QL_COMPARE_SCHEDULE").exists());
+    }
+
+    @Test
     void seedScriptsAreMigratedOnStartup() throws Exception {
         // 启动迁移：内置示例脚本（4 条）开箱即可从公开 API 读到
         mvc.perform(get("/api/public/rules"))

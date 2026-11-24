@@ -25,6 +25,7 @@
 | QLExpress | 4.1.4 (`com.alibaba:qlexpress4`) |
 | OpenTelemetry | 1.31.0（SDK + OTLP HTTP，traceId 与平台对齐） |
 | 审计库 | H2 嵌入式（内存模式，只增不改） |
+| 数据镜像 | 启动时从 `data/*.json` 全量加载到 H2 镜像表（QL_SCRIPT / QL_EXECUTION / QL_COMPARE_*） |
 | 安全 | Spring Security（读公开 / 写需登录） |
 | Vue | 3.4 |
 | Vite | 4 |
@@ -273,6 +274,8 @@ POST /api/public/run                    执行
      → {"success":true,"result":0.8,"traceId":"..."}
 ```
 三个接口均公开访问；`traceId` 可用于在平台内下钻完整执行日志。建表 DDL 见 `rulelog-core/src/main/resources/sql/`。
+
+**H2 数据镜像**：`data/*.json` 仍是唯一事实源（写操作照旧落 JSON）；每次启动由 `JsonToH2LoadRunner` 把脚本、执行记录、比对规则/历史/定时任务全量灌入 H2 镜像表，`QL_RULE` 同时由 `RuleMigrationRunner` 同步。可通过 `GET /api/public/data-stats` 查看各表行数验证加载结果。
 
 ### 比对画布（P2）
 
