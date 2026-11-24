@@ -24,6 +24,22 @@ class ScriptStoreTest {
     Path tempDir;
 
     @Test
+    void compareDemoSeedHasFetchAndCompareCards() {
+        ScriptStore store = new ScriptStore(tempDir.toString());
+        Script s = store.get("compare_demo");
+        assertNotNull(s, "应内置取数+比对双卡演示");
+        assertNotNull(s.getMeta());
+        java.util.List<?> cards = (java.util.List<?>) s.getMeta().get("cards");
+        assertEquals(3, cards.size());
+        assertEquals("call", ((java.util.Map<?, ?>) cards.get(0)).get("type"));
+        assertEquals("compare", ((java.util.Map<?, ?>) cards.get(1)).get("type"),
+                "第二张卡应为比对卡（与取数卡并列）");
+        java.util.Map<?, ?> cmp = (java.util.Map<?, ?>) cards.get(1);
+        java.util.Map<?, ?> rule = (java.util.Map<?, ?>) cmp.get("compareRule");
+        assertEquals(2, ((java.util.List<?>) rule.get("fetchNodes")).size());
+    }
+
+    @Test
     void getReturnsDeepCopyIsolatedFromStore() {
         ScriptStore store = new ScriptStore(tempDir.toString());
         Script s = new Script();
@@ -77,8 +93,8 @@ class ScriptStoreTest {
         Files.write(file, "{坏掉的 json".getBytes(StandardCharsets.UTF_8));
 
         ScriptStore store = new ScriptStore(tempDir.toString());
-        // 损坏时回退到内置示例脚本，不崩溃（4 条：VIP/积分/带参/决策表）
-        assertEquals(4, store.list().size());
+        // 损坏时回退到内置示例脚本，不崩溃（5 条：VIP/积分/带参/决策表/取数+比对）
+        assertEquals(5, store.list().size());
 
         try (java.util.stream.Stream<Path> files = Files.list(tempDir)) {
             List<Path> backups = files.filter(p -> p.getFileName().toString().startsWith("scripts.json.bak-"))

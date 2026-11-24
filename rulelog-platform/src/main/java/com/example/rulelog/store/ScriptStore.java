@@ -320,7 +320,81 @@ public class ScriptStore {
         decision.setUpdatedAt(now);
         seeds.add(decision);
 
+        // 取数 + 比对双卡演示：画布里同时有「取数卡」和「比对卡」，比对卡自带样例数据可直接运行
+        Script compare = new Script();
+        compare.setId("compare_demo");
+        compare.setName("取数 + 比对演示（双卡）");
+        String compareScript = "等级 = 查询用户等级(user);\n返回 等级;";
+        compare.setContent(compareScript);
+        compare.setDefaultParams(new java.util.LinkedHashMap<>(java.util.Collections.singletonMap("user", "张三")));
+        compare.setMeta(buildDemoCompareMeta(compareScript));
+        compare.setCreatedAt(now);
+        compare.setUpdatedAt(now);
+        seeds.add(compare);
+
         return seeds;
+    }
+
+    /** 构造双卡演示的画布 meta：取数卡 + 比对卡 + 返回卡 */
+    private Map<String, Object> buildDemoCompareMeta(String script) {
+        java.util.List<Map<String, Object>> cards = new ArrayList<>();
+        cards.add(card("cc1", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
+
+        // 比对卡：两份内置订单数据，按订单号对齐，金额容差 2
+        Map<String, Object> a = new LinkedHashMap<>();
+        a.put("id", "fa"); a.put("name", "取数A");
+        a.put("sourceType", "CONST");
+        a.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":100,\"等级\":\"VIP\"},"
+                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
+        a.put("resultKey", "A");
+        a.put("paramMapping", new LinkedHashMap<>());
+        a.put("dependsOn", new ArrayList<>());
+
+        Map<String, Object> b = new LinkedHashMap<>();
+        b.put("id", "fb"); b.put("name", "取数B");
+        b.put("sourceType", "CONST");
+        b.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":103,\"等级\":\"VIP\"},"
+                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
+        b.put("resultKey", "B");
+        b.put("paramMapping", new LinkedHashMap<>());
+        b.put("dependsOn", new ArrayList<>());
+
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("field", "金额"); amount.put("label", "金额");
+        amount.put("strategy", "numericTolerance"); amount.put("tolerance", 2);
+        Map<String, Object> level = new LinkedHashMap<>();
+        level.put("field", "等级"); level.put("label", "等级");
+        level.put("strategy", "equal"); level.put("tolerance", 0);
+
+        Map<String, Object> compareNode = new LinkedHashMap<>();
+        compareNode.put("keyField", "订单号");
+        compareNode.put("sourceKeys", java.util.Arrays.asList("A", "B"));
+        compareNode.put("fields", java.util.Arrays.asList(amount, level));
+
+        Map<String, Object> compareRule = new LinkedHashMap<>();
+        compareRule.put("name", "订单双源对账");
+        compareRule.put("fetchNodes", java.util.Arrays.asList(a, b));
+        compareRule.put("compareNode", compareNode);
+
+        Map<String, Object> compareCardFields = new LinkedHashMap<>();
+        compareCardFields.put("contextJson", "{\"user\":\"张三\"}");
+        compareCardFields.put("compareRule", compareRule);
+        cards.add(card("cc2", "compare", compareCardFields));
+
+        cards.add(card("cc3", "return", fields("expr", "等级")));
+
+        java.util.List<Map<String, Object>> sourceMap = new ArrayList<>();
+        sourceMap.add(span("cc1", "call", 1, 1));
+        Map<String, Object> emptySpan = span("cc2", "compare", 2, 1);
+        emptySpan.put("empty", true);
+        sourceMap.add(emptySpan);
+        sourceMap.add(span("cc3", "return", 2, 2));
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("cards", cards);
+        meta.put("cardSourceMap", sourceMap);
+        meta.put("contentHash", com.example.rulelog.util.ContentHash.hashContent(script));
+        return meta;
     }
 
     /** 构造决策表演示的画布 meta：4 张卡 + 行号映射 + contentHash（与前端一致） */
