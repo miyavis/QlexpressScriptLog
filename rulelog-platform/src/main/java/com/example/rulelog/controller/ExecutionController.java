@@ -79,7 +79,11 @@ public class ExecutionController {
                 com.example.rulelog.compare.CompareRule rule =
                         com.example.rulelog.util.JsonUtils.mapper().convertValue(
                                 ruleObj, com.example.rulelog.compare.CompareRule.class);
-                com.example.rulelog.compare.CompareResult result = compareService.run(rule, params);
+                // 取数卡产生的变量直接作为比对卡的输入上下文
+                Map<String, Object> compareContext = new java.util.LinkedHashMap<>();
+                if (params != null) compareContext.putAll(params);
+                if (record.getVariables() != null) compareContext.putAll(record.getVariables());
+                com.example.rulelog.compare.CompareResult result = compareService.run(rule, compareContext);
                 ruleExecutionService.appendCompareStep(record, String.valueOf(card.getOrDefault("name", "比对卡")), result);
             } catch (Exception e) {
                 org.slf4j.LoggerFactory.getLogger(ExecutionController.class)

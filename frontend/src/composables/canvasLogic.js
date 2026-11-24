@@ -88,6 +88,9 @@ export const genScriptFromCards = (cards) => {
       for (const line of script.split("\n")) {
         texts.push(line);
       }
+    } else if (c.type === "compare") {
+      // 比对卡自生成一行脚本：执行脚本时取数/加工/比对一并完成（由后端追加比对步骤）
+      texts.push('返回 "比对完成";');
     } else if (c.type === "text") {
       texts.push(String(c.raw || "").replace(/\r?\n/g, " "));
     }

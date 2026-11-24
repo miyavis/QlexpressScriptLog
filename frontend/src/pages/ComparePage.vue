@@ -57,6 +57,7 @@
             <label>取数方式
               <select v-model="node.sourceType" class="card-input">
                 <option value="CONST">内置数据（JSON）</option>
+                <option value="CONTEXT">上游结果（变量名）</option>
                 <option value="SCRIPT">执行脚本</option>
                 <option value="FUNCTION">调用函数</option>
                 <option value="DERIVE">加工（QL脚本）</option>
@@ -73,6 +74,9 @@
             </label>
             <label class="cmp-wide" v-else-if="node.sourceType === 'FUNCTION'">函数名
               <input v-model="node.sourceName" class="card-input" placeholder="如 查询用户等级" />
+            </label>
+            <label class="cmp-wide" v-else-if="node.sourceType === 'CONTEXT'">上游变量名
+              <input v-model="node.sourceName" class="card-input" placeholder="如 积分 / 等级" />
             </label>
             <label class="cmp-wide" v-else-if="node.sourceType === 'DERIVE'">加工脚本（用 ${A}/${B} 引用上游结果）
               <textarea v-model="node.sourceName" class="card-input cmp-json-area" rows="3" placeholder='返回 a * b;'></textarea>

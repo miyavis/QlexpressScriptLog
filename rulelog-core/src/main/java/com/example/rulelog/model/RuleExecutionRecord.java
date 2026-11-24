@@ -27,6 +27,8 @@ public class RuleExecutionRecord {
 
     /** 本次实际使用的参数（默认参数 + 请求覆盖后的合并快照） */
     private Map<String, Object> params = new LinkedHashMap<>();
+    /** 脚本执行后产生的变量（供下游比对卡作为输入） */
+    private Map<String, Object> variables = new LinkedHashMap<>();
 
     private boolean success;
 
@@ -98,6 +100,14 @@ public class RuleExecutionRecord {
 
     public void setParams(Map<String, Object> params) {
         this.params = params == null ? new LinkedHashMap<>() : params;
+    }
+
+    public Map<String, Object> getVariables() {
+        return variables;
+    }
+
+    public void setVariables(Map<String, Object> variables) {
+        this.variables = variables == null ? new LinkedHashMap<>() : variables;
     }
 
     public boolean isSuccess() {

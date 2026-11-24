@@ -36,8 +36,14 @@ public class CompareEngine {
 
         // 1. 按依赖拓扑顺序执行取数节点（DAG）
         for (FetchNode node : topologicalOrder(rule.getFetchNodes())) {
-            Map<String, Object> params = ContextResolver.resolveParams(node.getParamMapping(), context);
-            Object data = fetcher.fetch(node.getSourceType(), node.getSourceName(), params);
+            Object data;
+            if ("CONTEXT".equalsIgnoreCase(node.getSourceType())) {
+                // 直接引用上游取数卡的结果变量（如 ${等级} / ${积分}）
+                data = ContextResolver.resolvePath(context, node.getSourceName());
+            } else {
+                Map<String, Object> params = ContextResolver.resolveParams(node.getParamMapping(), context);
+                data = fetcher.fetch(node.getSourceType(), node.getSourceName(), params);
+            }
             if (node.getResultKey() != null && !node.getResultKey().trim().isEmpty()) {
                 context.put(node.getResultKey(), data);
             }

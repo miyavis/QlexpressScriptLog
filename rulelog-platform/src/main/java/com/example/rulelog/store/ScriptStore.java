@@ -148,7 +148,8 @@ public class ScriptStore {
         decision.setCreatedAt(now); decision.setUpdatedAt(now);
         seeds.add(decision);
 
-        String compareScript = "等级 = 查询用户等级(user);\n返回 等级;";
+        // 取数卡产出变量 积分，比对卡直接消费它；比对卡自己生成最后一行脚本
+        String compareScript = "积分 = 查询用户积分(user);\n返回 \"比对完成\";";
         Script compare = new Script();
         compare.setId("compare_demo");
         compare.setName("取数 + 比对演示（双卡）");
@@ -195,13 +196,14 @@ public class ScriptStore {
 
     private Map<String, Object> buildDemoCompareMeta(String script) {
         java.util.List<Map<String, Object>> cards = new ArrayList<>();
-        cards.add(card("cc1", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
+        // 取数卡：产出变量 积分，作为比对卡的输入
+        cards.add(card("cc1", "call", fields("varName", "积分", "func", "查询用户积分", "param", "user")));
 
-        // 取数A：调用业务函数拿积分
+        // 取数A：直接引用上游取数卡的结果变量
         Map<String, Object> a = new LinkedHashMap<>();
-        a.put("id", "fa"); a.put("name", "取数A·积分"); a.put("sourceType", "FUNCTION");
-        a.put("sourceName", "查询用户积分");
-        a.put("paramMapping", fields("user", "${user}"));
+        a.put("id", "fa"); a.put("name", "取数A·上游积分"); a.put("sourceType", "CONTEXT");
+        a.put("sourceName", "积分");
+        a.put("paramMapping", new LinkedHashMap<>());
         a.put("resultKey", "A"); a.put("dependsOn", new ArrayList<>());
 
         // 取数B：调用业务函数拿折扣
@@ -240,14 +242,10 @@ public class ScriptStore {
         cf.put("contextJson", "{\"user\":\"张三\"}");
         cf.put("compareRule", rule);
         cards.add(card("cc2", "compare", cf));
-        cards.add(card("cc3", "return", fields("expr", "等级")));
 
         java.util.List<Map<String, Object>> sourceMap = new ArrayList<>();
         sourceMap.add(span("cc1", "call", 1, 1));
-        Map<String, Object> es = span("cc2", "compare", 2, 1);
-        es.put("empty", true);
-        sourceMap.add(es);
-        sourceMap.add(span("cc3", "return", 2, 2));
+        sourceMap.add(span("cc2", "compare", 2, 2));
 
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("cards", cards);

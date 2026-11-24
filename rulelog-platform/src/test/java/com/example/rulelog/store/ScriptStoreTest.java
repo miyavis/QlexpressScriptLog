@@ -21,10 +21,9 @@ class ScriptStoreTest {
         assertNotNull(s, "应内置取数+比对双卡演示");
         assertNotNull(s.getMeta());
         java.util.List<?> cards = (java.util.List<?>) s.getMeta().get("cards");
-        assertEquals(3, cards.size());
+        assertEquals(2, cards.size(), "取数卡 + 比对卡");
         assertEquals("call", ((java.util.Map<?, ?>) cards.get(0)).get("type"));
-        assertEquals("compare", ((java.util.Map<?, ?>) cards.get(1)).get("type"),
-                "第二张卡应为比对卡（与取数卡并列）");
+        assertEquals("compare", ((java.util.Map<?, ?>) cards.get(1)).get("type"));
         java.util.Map<?, ?> cmp = (java.util.Map<?, ?>) cards.get(1);
         java.util.Map<?, ?> rule = (java.util.Map<?, ?>) cmp.get("compareRule");
         assertEquals(4, ((java.util.List<?>) rule.get("fetchNodes")).size(),

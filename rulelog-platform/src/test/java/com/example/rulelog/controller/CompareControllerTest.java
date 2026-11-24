@@ -103,6 +103,22 @@ class CompareControllerTest {
     }
 
     @Test
+    void contextNodeConsumesUpstreamVariable() throws Exception {
+        String inline = "{\"rule\":{\"name\":\"上游结果比对\",\"fetchNodes\":["
+                + "{\"id\":\"a\",\"name\":\"A\",\"sourceType\":\"CONTEXT\",\"sourceName\":\"积分\",\"resultKey\":\"A\",\"paramMapping\":{},\"dependsOn\":[]},"
+                + "{\"id\":\"b\",\"name\":\"B\",\"sourceType\":\"CONST\",\"sourceName\":\"380\",\"resultKey\":\"B\",\"paramMapping\":{},\"dependsOn\":[]}],"
+                + "\"compareNode\":{\"keyField\":\"value\",\"sourceKeys\":[\"A\",\"B\"],"
+                + "\"fields\":[{\"field\":\"value\",\"label\":\"值\",\"strategy\":\"equal\"}]}},"
+                + "\"context\":{\"积分\":380}}";
+        mvc.perform(post("/api/compare-rules/run")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(inline))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inconsistentRows").value(0))
+                .andExpect(jsonPath("$.rows[0].sourceValues.A.value").value(380));
+    }
+
+    @Test
     void deriveAndComparePipeline() throws Exception {
         // A=2, B=3 → 加工 a*b=6 → 与 C=6 比对（验证 DAG 依赖 + DERIVE 节点）
         String inline = "{\"rule\":{\"name\":\"加工比对\",\"fetchNodes\":["

@@ -126,6 +126,7 @@ public class RuleExecutionService {
             RuleTraceContext.set(traceId);
             qlResult = engine.execute(content, actualParams, timeoutMillis);
             record.setResult(qlResult.getResult());
+            record.setVariables(collectVariables(qlResult));
             record.setSuccess(true);
         } catch (QLException e) {
             // 编译期语法错误与运行期错误统一记录到执行结果里，前端直接展示
@@ -156,6 +157,39 @@ public class RuleExecutionService {
             }
         }
         return record;
+    }
+
+    /** 从表达式轨迹里提取脚本产生的变量（供下游比对卡作为输入） */
+    private Map<String, Object> collectVariables(QLResult result) {
+        Map<String, Object> vars = new LinkedHashMap<>();
+        if (result == null || result.getExpressionTraces() == null) return vars;
+        for (ExpressionTrace t : result.getExpressionTraces()) collectVariableTrace(t, vars);
+        return vars;
+    }
+
+    private void collectVariableTrace(ExpressionTrace t, Map<String, Object> vars) {
+        if (t == null) return;
+        boolean assignmentOperator = t.getType() == com.alibaba.qlexpress4.runtime.trace.TraceType.OPERATOR
+                && "=".equals(t.getToken()) && t.getValue() != null;
+        if (com.alibaba.qlexpress4.runtime.trace.TraceType.VARIABLE == t.getType()
+                && t.isEvaluated() && t.getToken() != null) {
+            if (t.getValue() != null) {
+                vars.put(t.getToken(), t.getValue());
+            } else {
+                vars.putIfAbsent(t.getToken(), null);
+            }
+        }
+        if (t.getChildren() != null) {
+            for (ExpressionTrace c : t.getChildren()) {
+                // 赋值语句 "变量 = 表达式"：赋值目标 VARIABLE 的 value 为 null，
+                // 实际值在父级 OPERATOR("=") 上，这里回填
+                if (assignmentOperator && c.getType() == com.alibaba.qlexpress4.runtime.trace.TraceType.VARIABLE
+                        && c.getToken() != null && c.getValue() == null) {
+                    vars.put(c.getToken(), t.getValue());
+                }
+                collectVariableTrace(c, vars);
+            }
+        }
     }
 
     /** 把一次比对结果作为步骤追加到脚本执行记录（同一 traceId，执行记录里能一并看到） */

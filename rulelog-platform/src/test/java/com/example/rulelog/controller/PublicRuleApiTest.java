@@ -25,6 +25,45 @@ class PublicRuleApiTest {
     @Autowired private MockMvc mvc;
     @Autowired private JdbcTemplate jdbc;
 
+    @Autowired private com.example.rulelog.store.ScriptStore scriptStore;
+
+    @Test
+    void executionCapturesVariablesForDownstreamCompare() throws Exception {
+        // 取数卡产出变量，比对卡消费它（同一条执行记录）
+        com.example.rulelog.model.Script script = new com.example.rulelog.model.Script();
+        script.setId("var_compare_test");
+        script.setName("变量传递测试");
+        script.setContent("积分 = 查询用户积分(user);\n返回 \"完成\";");
+        java.util.Map<String, Object> compareNode = new java.util.LinkedHashMap<>();
+        compareNode.put("keyField", "value");
+        compareNode.put("sourceKeys", java.util.Arrays.asList("A", "B"));
+        java.util.Map<String, Object> field = new java.util.LinkedHashMap<>();
+        field.put("field", "value"); field.put("label", "值"); field.put("strategy", "equal");
+        compareNode.put("fields", java.util.Collections.singletonList(field));
+        java.util.Map<String, Object> rule = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Object> a = new java.util.LinkedHashMap<>();
+        a.put("id", "a"); a.put("name", "A"); a.put("sourceType", "CONTEXT");
+        a.put("sourceName", "积分"); a.put("resultKey", "A");
+        java.util.Map<String, Object> b = new java.util.LinkedHashMap<>();
+        b.put("id", "b"); b.put("name", "B"); b.put("sourceType", "CONST");
+        b.put("sourceName", "380"); b.put("resultKey", "B");
+        rule.put("fetchNodes", java.util.Arrays.asList(a, b));
+        rule.put("compareNode", compareNode);
+        java.util.Map<String, Object> card = new java.util.LinkedHashMap<>();
+        card.put("id", "c1"); card.put("type", "compare"); card.put("compareRule", rule);
+        java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("cards", java.util.Collections.singletonList(card));
+        script.setMeta(meta);
+        scriptStore.put(script);
+
+        mvc.perform(post("/api/executions/run?scriptId=var_compare_test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"user\":\"张三\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.variables.积分").value(380))
+                .andExpect(jsonPath("$.rootSteps[0].serviceName").value("比对引擎"));
+    }
+
     @Test
     void publicRunSupportsBusinessFunctions() throws Exception {
         // 公开 API 执行带中文业务函数的规则（此前会因函数未注册而失败）
