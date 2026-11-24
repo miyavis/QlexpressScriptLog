@@ -7,6 +7,7 @@ import com.alibaba.qlexpress4.QLResult;
 import com.alibaba.qlexpress4.api.QLFunctionalVarargs;
 import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.alibaba.qlexpress4.security.QLSecurityStrategy;
+import com.example.rulelog.function.FunctionInvoker;
 import com.example.rulelog.function.FunctionMeta;
 import com.example.rulelog.function.FunctionScanner;
 import com.example.rulelog.loader.RuleDefinition;
@@ -137,12 +138,27 @@ public class RuleEngine {
 
     /**
      * 扫描对象上的 @RuleFunction 注解，自动注册函数（SDK 侧，无需 Spring）。
-     * 注意：注解提供的是元信息；实际执行函数仍需通过 register() 提供回调。
+     * 注册内容包含两部分：可执行的 QLExpress 函数（反射调用）+ 参数元信息（契约下发）。
      */
     public RuleEngine scanFunctions(Object... beans) {
         if (beans == null) return this;
         for (Object bean : beans) {
             for (FunctionMeta meta : FunctionScanner.scan(bean)) {
+                final FunctionMeta m = meta;
+                if (meta.getTargetMethod() != null && meta.getTargetBean() != null) {
+                    // 真正注册可执行函数：位置参数 → ParamBinder → 反射调用
+                    register(meta.getName(), (ctx, parameters) -> {
+                        java.util.List<Object> args = new java.util.ArrayList<>();
+                        for (int i = 0; i < parameters.size(); i++) {
+                            args.add(parameters.get(i).get());
+                        }
+                        try {
+                            return FunctionInvoker.invoke(m, args);
+                        } catch (Exception e) {
+                            throw new RuntimeException("函数 [" + m.getName() + "] 调用失败: " + e.getMessage(), e);
+                        }
+                    });
+                }
                 functions.put(meta.getName(), meta);
             }
         }

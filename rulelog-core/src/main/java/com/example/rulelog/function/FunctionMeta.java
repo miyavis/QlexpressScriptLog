@@ -17,6 +17,10 @@ public class FunctionMeta {
     private String methodName;    // Java 方法名
     private List<ParamDef> params = new ArrayList<>();
 
+    /** 反射调用所需的目标方法/实例（不参与序列化，仅运行时注册用） */
+    private transient java.lang.reflect.Method targetMethod;
+    private transient Object targetBean;
+
     public FunctionMeta() {
     }
 
@@ -40,4 +44,8 @@ public class FunctionMeta {
 
     public List<ParamDef> getParams() { return params; }
     public void setParams(List<ParamDef> params) { this.params = params == null ? new ArrayList<>() : params; }
+    public java.lang.reflect.Method getTargetMethod() { return targetMethod; }
+    public void setTargetMethod(java.lang.reflect.Method targetMethod) { this.targetMethod = targetMethod; }
+    public Object getTargetBean() { return targetBean; }
+    public void setTargetBean(Object targetBean) { this.targetBean = targetBean; }
 }

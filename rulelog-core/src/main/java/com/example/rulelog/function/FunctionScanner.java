@@ -25,12 +25,16 @@ public final class FunctionScanner {
     private FunctionScanner() {
     }
 
-    /** 扫描给定对象（实例）的所有 @RuleFunction 方法 */
+    /** 扫描给定对象（实例）的所有 @RuleFunction 方法，并带上可反射调用的方法与实例 */
     public static List<FunctionMeta> scan(Object bean) {
         if (bean == null) {
             return new ArrayList<>();
         }
-        return scan(bean.getClass());
+        List<FunctionMeta> metas = scan(bean.getClass());
+        for (FunctionMeta meta : metas) {
+            meta.setTargetBean(bean);
+        }
+        return metas;
     }
 
     /** 扫描给定类的 @RuleFunction 方法 */
@@ -40,13 +44,14 @@ public final class FunctionScanner {
             return out;
         }
         for (Method method : clazz.getMethods()) {
-            RuleFunction ann = method.getAnnotation(RuleFunction.class);
+            RuleFunction ann = findAnnotation(method, clazz);
             if (ann == null) {
                 continue;
             }
             FunctionMeta meta = new FunctionMeta(ann.name(), ann.desc());
             meta.setMethodName(method.getName());
             meta.setServiceName(clazz.getSimpleName());
+            meta.setTargetMethod(method);
             List<ParamDef> params = new ArrayList<>();
             for (RuleParam p : ann.params()) {
                 params.add(toParamDef(p));
@@ -55,6 +60,22 @@ public final class FunctionScanner {
             out.add(meta);
         }
         return out;
+    }
+
+    /** 兼容 AOP/CGLIB 代理：代理类方法上没注解时，回父类找同名同参方法的注解 */
+    private static RuleFunction findAnnotation(Method method, Class<?> clazz) {
+        RuleFunction ann = method.getAnnotation(RuleFunction.class);
+        if (ann != null) return ann;
+        Class<?> cur = clazz.getSuperclass();
+        while (cur != null && cur != Object.class) {
+            try {
+                Method m = cur.getMethod(method.getName(), method.getParameterTypes());
+                ann = m.getAnnotation(RuleFunction.class);
+                if (ann != null) return ann;
+            } catch (NoSuchMethodException ignored) { }
+            cur = cur.getSuperclass();
+        }
+        return null;
     }
 
     /** 把 @RuleParam 转成 ParamDef；schema JSON 递归解析成 fields/element */

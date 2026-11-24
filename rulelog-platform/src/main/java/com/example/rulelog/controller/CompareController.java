@@ -87,8 +87,10 @@ public class CompareController {
     /** 比对执行历史（可按规则过滤） */
     @GetMapping("/records")
     public List<CompareRecord> records(@RequestParam(required = false) String ruleId,
-                                       @RequestParam(defaultValue = "50") int limit) {
-        return recordStore.list(ruleId, Math.min(Math.max(limit, 1), 200));
+                                       @RequestParam(defaultValue = "50") int limit,
+                                       @RequestParam(required = false) Long from,
+                                       @RequestParam(required = false) Long to) {
+        return recordStore.list(ruleId, Math.min(Math.max(limit, 1), 200), from, to);
     }
 
     /** 可作为取数来源的脚本（前端下拉） */

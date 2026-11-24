@@ -1451,6 +1451,9 @@ const isLoadingCompare = ref(false);
 const compareContextJson = ref('{\n  "user": "张三"\n}');
 const compareScriptSources = ref([]);
 const compareRecords = ref([]);
+const compareFrom = ref("");
+const compareTo = ref("");
+const compareSchedules = ref([]);
 const onlyDifferences = ref(false);
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -1464,6 +1467,7 @@ const loadCompareRules = async () => {
     }
     loadCompareScriptSources();
     loadCompareRecords();
+    loadCompareSchedules();
   } catch (e) {
     notify("加载比对规则失败：" + e.message, "error");
   } finally {
@@ -1479,9 +1483,79 @@ const loadCompareScriptSources = async () => {
   }
 };
 
-const loadCompareRecords = async () => {
+const loadCompareSchedules = async () => {
   try {
     const q = selectedCompareRuleId.value ? `?ruleId=${encodeURIComponent(selectedCompareRuleId.value)}` : "";
+    compareSchedules.value = await requestJson(`${API}/compare-schedules${q}`, {}, fetch, getApiToken());
+  } catch (e) {
+    compareSchedules.value = [];
+  }
+};
+
+const addCompareSchedule = async (intervalMinutes) => {
+  if (!selectedCompareRuleId.value) {
+    notify("请先保存比对规则", "warning");
+    return;
+  }
+  try {
+    await writeRequest(`${API}/compare-schedules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ruleId: selectedCompareRuleId.value,
+        name: "每 " + intervalMinutes + " 分钟",
+        enabled: true,
+        intervalMinutes,
+        contextJson: compareContextJson.value || "{}"
+      })
+    });
+    await loadCompareSchedules();
+    notify("定时任务已添加", "success");
+  } catch (e) {
+    if (!isUnauthorized(e)) notify("添加失败：" + e.message, "error");
+  }
+};
+
+const deleteCompareSchedule = async (id) => {
+  try {
+    await writeRequest(`${API}/compare-schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadCompareSchedules();
+    notify("定时任务已删除", "success");
+  } catch (e) {
+    if (!isUnauthorized(e)) notify("删除失败：" + e.message, "error");
+  }
+};
+
+const toggleCompareSchedule = async (s) => {
+  try {
+    await writeRequest(`${API}/compare-schedules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...s, enabled: !s.enabled })
+    });
+    await loadCompareSchedules();
+  } catch (e) {
+    if (!isUnauthorized(e)) notify("操作失败：" + e.message, "error");
+  }
+};
+
+const runCompareScheduleNow = async (id) => {
+  try {
+    await writeRequest(`${API}/compare-schedules/${encodeURIComponent(id)}/run`, { method: "POST" });
+    await loadCompareRecords();
+    notify("已执行一次，可在历史中查看", "success");
+  } catch (e) {
+    if (!isUnauthorized(e)) notify("执行失败：" + e.message, "error");
+  }
+};
+
+const loadCompareRecords = async () => {
+  try {
+    const params = new URLSearchParams();
+    if (selectedCompareRuleId.value) params.set("ruleId", selectedCompareRuleId.value);
+    if (compareFrom.value) params.set("from", String(new Date(compareFrom.value).getTime()));
+    if (compareTo.value) params.set("to", String(new Date(compareTo.value + "T23:59:59").getTime()));
+    const q = params.toString() ? "?" + params.toString() : "";
     compareRecords.value = await requestJson(`${API}/compare-rules/records${q}`, {}, fetch, getApiToken());
   } catch (e) {
     compareRecords.value = [];
@@ -1495,6 +1569,14 @@ const showCompareRecord = (rec) => {
   compareContextJson.value = JSON.stringify(rec.context || {}, null, 2);
 };
 
+/** 历史重跑：用当时的上下文快照重新执行一次比对 */
+const rerunCompareRecord = async (rec) => {
+  if (!rec) return;
+  compareContextJson.value = JSON.stringify(rec.context || {}, null, 2);
+  if (rec.ruleId) selectedCompareRuleId.value = rec.ruleId;
+  await runCompare();
+};
+
 const selectCompareRule = (id) => {
   const rule = compareRules.value.find((r) => r.id === id);
   if (!rule) return;
@@ -1502,6 +1584,7 @@ const selectCompareRule = (id) => {
   compareDraft.value = clone(rule);
   compareResult.value = null;
   loadCompareRecords();
+  loadCompareSchedules();
 };
 
 const newCompareRule = () => {
@@ -1812,10 +1895,19 @@ export {
   compareContextJson,
   compareScriptSources,
   compareRecords,
+  compareFrom,
+  compareTo,
+  compareSchedules,
+  addCompareSchedule,
+  deleteCompareSchedule,
+  toggleCompareSchedule,
+  runCompareScheduleNow,
+  loadCompareSchedules,
   onlyDifferences,
   loadCompareRules,
   loadCompareRecords,
   showCompareRecord,
+  rerunCompareRecord,
   selectCompareRule,
   newCompareRule,
   saveCompareRule,

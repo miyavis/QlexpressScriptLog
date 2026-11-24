@@ -43,26 +43,19 @@ public class Express4Engine {
     }
 
     private void registerBusinessFunctions(UserService userService, DiscountService discountService) {
-        // 扫描注解元信息（中文名/说明/参数契约），供画布与前端参数渲染使用
-        List<FunctionMeta> userMetas = FunctionScanner.scan(userService);
-        List<FunctionMeta> discMetas = FunctionScanner.scan(discountService);
+        // 注解即注册：反射调用 + 参数契约一次完成，删除了原来手写的 3 段 lambda
+        core.scanFunctions(userService, discountService);
 
-        // 查询用户等级(user) -> String
-        core.register("查询用户等级", (ctx, parameters) ->
-                userService.queryLevel((String) parameters.get(0).get()));
-        aliasRegistry.registerMeta(findMeta(userMetas, "查询用户等级"), "UserService", "user");
+        // 别名注册表：中文名/说明/嵌套参数定义来自 @RuleFunction / @RuleParam
+        for (Object bean : new Object[]{userService, discountService}) {
+            for (FunctionMeta meta : FunctionScanner.scan(bean)) {
+                String paramHint = meta.getParams().isEmpty() ? ""
+                        : meta.getParams().stream().map(p -> p.getName()).reduce((a, b) -> a + ", " + b).orElse("");
+                aliasRegistry.registerMeta(meta, simpleServiceName(bean), paramHint);
+            }
+        }
 
-        // 查询用户积分(user) -> int
-        core.register("查询用户积分", (ctx, parameters) ->
-                userService.queryPoints((String) parameters.get(0).get()));
-        aliasRegistry.registerMeta(findMeta(userMetas, "查询用户积分"), "UserService", "user");
-
-        // 计算折扣(user) -> double
-        core.register("计算折扣", (ctx, parameters) ->
-                discountService.calcDiscount((String) parameters.get(0).get()));
-        aliasRegistry.registerMeta(findMeta(discMetas, "计算折扣"), "DiscountService", "user");
-
-        // 记录日志(步骤名 [, 详情])
+        // 记录日志不是业务 Service 方法（脚本语句），保留手写可变参数注册
         core.registerVarArgs("记录日志", args -> {
             String stepName = args.length > 0 ? String.valueOf(args[0]) : "未命名步骤";
             String detail = args.length > 1 ? String.valueOf(args[1]) : "";
@@ -72,9 +65,11 @@ public class Express4Engine {
         aliasRegistry.register("记录日志", "StepLogger", "log", "步骤名, 内容");
     }
 
-    private FunctionMeta findMeta(List<FunctionMeta> metas, String name) {
-        if (metas == null) return null;
-        return metas.stream().filter(m -> name.equals(m.getName())).findFirst().orElse(null);
+    /** AOP 代理类名可能带 $$，归一化成 UserService / DiscountService */
+    private String simpleServiceName(Object bean) {
+        String n = bean.getClass().getSimpleName();
+        int i = n.indexOf("$$");
+        return i > 0 ? n.substring(0, i) : n;
     }
 
     /** 获取 core 内核（供 RuleExecutionService 等复用） */

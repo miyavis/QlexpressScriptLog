@@ -81,6 +81,7 @@
             <div class="cmp-mapping-head">参数映射（从运行上下文取值，支持 ${路径}）
               <button class="btn-secondary sm" @click="addParamMapping(node)">＋ 参数</button>
             </div>
+            <div v-if="nodeDeps(node).length" class="cmp-node-deps">依赖：{{ nodeDeps(node).join('、') }}（由参数引用自动推断，按依赖顺序执行）</div>
             <div v-for="(val, key) in node.paramMapping" :key="key" class="cmp-mapping-row">
               <input :value="key" class="card-input" placeholder="参数名" @change="renameParamMapping(node, key, $event.target.value)" />
               <span class="cmp-arrow">←</span>
@@ -142,13 +143,42 @@
           {{ isRunningCompare ? '比对中…' : '▶ 运行比对' }}
         </button>
 
+        <div class="cmp-date-range">
+          <label>起 <input type="datetime-local" v-model="compareFrom" @change="loadCompareRecords()" /></label>
+          <label>止 <input type="datetime-local" v-model="compareTo" @change="loadCompareRecords()" /></label>
+          <button class="btn-secondary sm" @click="compareFrom=''; compareTo=''; loadCompareRecords()">清除</button>
+        </div>
         <div class="cmp-history" v-if="compareRecords.length">
-          <select class="card-input" :value="''" @change="showCompareRecord(compareRecords.find(r => r.id === $event.target.value))">
+          <select class="card-input" :value="''" @change="onHistoryChange($event.target.value)">
             <option value="">📜 历史记录（点选回看）</option>
             <option v-for="rec in compareRecords" :key="rec.id" :value="rec.id">
               {{ new Date(rec.savedAt).toLocaleString() }} · {{ rec.summary }}
             </option>
           </select>
+          <button v-if="selectedHistoryRecord" class="btn-secondary sm" @click="rerunCompareRecord(selectedHistoryRecord)">
+            ↻ 重跑此记录
+          </button>
+        </div>
+
+        <div class="cmp-schedules">
+          <div class="cmp-section-head">⏰ 定时任务（无需 cron）</div>
+          <div class="cmp-sched-add">
+            <select v-model="scheduleInterval" class="card-input">
+              <option :value="5">每 5 分钟</option>
+              <option :value="15">每 15 分钟</option>
+              <option :value="60">每小时</option>
+              <option :value="1440">每天</option>
+            </select>
+            <button class="btn-secondary sm" @click="addCompareSchedule(Number(scheduleInterval))">＋ 添加</button>
+          </div>
+          <div v-for="s in compareSchedules" :key="s.id" class="cmp-sched-row">
+            <span class="cmp-sched-name" :class="{ off: !s.enabled }">{{ s.name }}</span>
+            <span class="cmp-sched-time" v-if="s.lastRunAt">上次 {{ new Date(s.lastRunAt).toLocaleString() }}</span>
+            <button class="card-btn" @click="runCompareScheduleNow(s.id)" title="立即运行一次">▶</button>
+            <button class="card-btn" @click="toggleCompareSchedule(s)">{{ s.enabled ? '停用' : '启用' }}</button>
+            <button class="card-btn danger" @click="deleteCompareSchedule(s.id)">✕</button>
+          </div>
+          <p v-if="!compareSchedules.length" class="cmp-empty">暂无定时任务</p>
         </div>
 
         <template v-if="compareResult">
@@ -205,8 +235,9 @@
 import { computed, ref } from "vue";
 import {
   compareRules, selectedCompareRuleId, compareDraft, compareResult, isRunningCompare,
-  compareContextJson, compareScriptSources, compareRecords, onlyDifferences,
-  showCompareRecord, loadCompareRules, selectCompareRule,
+  compareContextJson, compareScriptSources, compareRecords, compareFrom, compareTo, onlyDifferences,
+  showCompareRecord, rerunCompareRecord, loadCompareRules, loadCompareRecords, selectCompareRule,
+  compareSchedules, addCompareSchedule, deleteCompareSchedule, toggleCompareSchedule, runCompareScheduleNow,
   newCompareRule, saveCompareRule, deleteCompareRule, runCompare,
   addFetchNode, removeFetchNode, moveFetchNode, addFieldCompare, removeFieldCompare,
   addParamMapping, removeParamMapping, renameParamMapping, notify
@@ -214,6 +245,13 @@ import {
 
 const draft = computed(() => compareDraft.value);
 const dragIdx = ref(null);
+const selectedHistoryRecord = ref(null);
+const scheduleInterval = ref(60);
+const onHistoryChange = (id) => {
+  const rec = compareRecords.value.find((r) => r.id === id) || null;
+  selectedHistoryRecord.value = rec;
+  if (rec) showCompareRecord(rec);
+};
 const dropNode = (toIdx) => {
   if (dragIdx.value !== null) moveFetchNode(dragIdx.value, toIdx);
   dragIdx.value = null;
@@ -231,6 +269,24 @@ const dataPool = computed(() => {
   }
   return out;
 });
+
+/** 从 paramMapping 的 ${...} 推断依赖的取数节点名 */
+const nodeDeps = (node) => {
+  const keys = new Set();
+  for (const v of Object.values(node.paramMapping || {})) {
+    const m = String(v || '').matchAll(/\$\{([^}]+)\}/g);
+    for (const x of m) {
+      const head = x[1].trim().split(/[\[.]/)[0];
+      const producer = (draft.value?.fetchNodes || []).find(n => n.resultKey === head && n.id !== node.id);
+      if (producer) keys.add(producer.name || producer.resultKey);
+    }
+  }
+  for (const id of node.dependsOn || []) {
+    const producer = (draft.value?.fetchNodes || []).find(n => n.id === id && n.id !== node.id);
+    if (producer) keys.add(producer.name || producer.resultKey);
+  }
+  return [...keys];
+};
 
 const copyExpr = async (expr) => {
   try {

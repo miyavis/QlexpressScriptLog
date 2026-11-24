@@ -55,6 +55,15 @@ class RuleEngineSdkTest {
     static class Biz {
         @RuleFunction(name = "打招呼", params = @RuleParam(name = "name", label = "姓名", type = "string"))
         public String hi(String name) { return "hi " + name; }
+
+        @RuleFunction(name = "翻倍", params = @RuleParam(name = "n", label = "数", type = "number"))
+        public int doubleIt(int n) { return n * 2; }
+
+        @RuleFunction(name = "拼接", params = {
+                @RuleParam(name = "a", label = "A", type = "string"),
+                @RuleParam(name = "b", label = "B", type = "string")
+        })
+        public String join(String a, String b) { return a + b; }
     }
 
     @Test
@@ -62,5 +71,22 @@ class RuleEngineSdkTest {
         RuleEngine engine = RuleEngine.builder().scanFunctions(new Biz()).build();
         assertTrue(engine.getFunctions().containsKey("打招呼"));
         assertEquals("姓名", engine.getFunctions().get("打招呼").getParams().get(0).getLabel());
+    }
+
+    @Test
+    void scanFunctionsActuallyRegistersCallableFunctions() {
+        RuleEngine engine = RuleEngine.builder().scanFunctions(new Biz()).build();
+
+        // 注解函数必须能在脚本里真正调用（不只是元信息）
+        Object r1 = engine.execute("返回 打招呼(\"张三\");", Collections.emptyMap()).getResult();
+        assertEquals("hi 张三", r1);
+
+        // 数字类型适配：QLExpress 的 Integer → int 方法参数
+        Object r2 = engine.execute("返回 翻倍(21);", Collections.emptyMap()).getResult();
+        assertEquals(42, ((Number) r2).intValue());
+
+        // 多参数按 @RuleParam 顺序绑定
+        Object r3 = engine.execute("返回 拼接(\"A\", \"B\");", Collections.emptyMap()).getResult();
+        assertEquals("AB", r3);
     }
 }

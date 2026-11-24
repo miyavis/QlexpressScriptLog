@@ -68,4 +68,45 @@ class CompareControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ok").value(true));
     }
+
+    @Test
+    void historyDateRangeFilters() throws Exception {
+        // 未来时间点不应有记录；过去时间点应包含示例运行
+        long past = System.currentTimeMillis() - 60_000L;
+        long future = System.currentTimeMillis() + 60_000L;
+        mvc.perform(get("/api/compare-rules/records")
+                        .param("ruleId", "cmp_sample")
+                        .param("from", String.valueOf(past))
+                        .param("to", String.valueOf(future)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/compare-rules/records")
+                        .param("ruleId", "cmp_sample")
+                        .param("from", String.valueOf(future)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void scheduleCrud() throws Exception {
+        // 禁用状态：测试里不真正调度执行
+        String body = "{\"ruleId\":\"cmp_sample\",\"name\":\"测试定时\",\"enabled\":false,"
+                + "\"intervalMinutes\":5,\"contextJson\":\"{}\"}";
+        String created = mvc.perform(post("/api/compare-schedules")
+                        .with(httpBasic("admin", "admin123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").exists())
+                .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(created, "$.id");
+
+        mvc.perform(get("/api/compare-schedules").param("ruleId", "cmp_sample"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].intervalMinutes").value(5));
+
+        mvc.perform(delete("/api/compare-schedules/{id}", id)
+                        .with(httpBasic("admin", "admin123")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ok").value(true));
+    }
 }

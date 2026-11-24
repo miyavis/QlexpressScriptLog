@@ -285,6 +285,9 @@ POST /api/public/run                    执行
 - **数据池**：画布顶部列出可引用的 `${路径}` 表达式（上下文字段 + 各取数结果 Key），点击即复制，粘贴到参数映射完成「连线」；取数节点可拖拽排序。
 - **历史与下钻**：每次运行落盘到 `data/compare-records.json`，可在结果区下拉回看；勾选「只看差异」过滤一致行。脚本取数产生的 traceId 显示为链接，点击直达对应执行记录看完整调用链。
 - **试跑**：脚本编辑页「⚡ 试跑」用当前未保存内容 + 参数立即执行，不落正式执行记录、不写审计，适合边改边验。
+- **依赖执行（DAG）**：取数节点可按 `${结果Key}` 自动推断依赖（也可显式配 `dependsOn`），引擎拓扑排序后执行，成环时明确报错；画布上会显示推断出的依赖。
+- **历史与定时**：历史可按起止时间过滤并「重跑此记录」；「⏰ 定时任务」按每 5/15 分钟、每小时、每天配置，自动执行并落历史，无需写 cron。API 为 `/api/compare-schedules`。
+- **注解即函数**：`@RuleFunction` 方法由 `RuleEngine.scanFunctions(beans)` 反射注册为真正可调用的 QLExpress 函数（`FunctionInvoker` + `ParamBinder` 做类型适配），平台内置 Service 已删掉手写注册代码；兼容 AOP 代理类。
 
 后端核心在 `rulelog-core` 的 `compare` 包（`CompareEngine` + `CompareStrategy`，取数通过 Fetcher 回调注入，纯逻辑可单测）；平台侧 `CompareService` 把取数接到脚本/函数，规则存 `data/compare-rules.json`，REST API 为 `/api/compare-rules`（CRUD + `/run`）。
 

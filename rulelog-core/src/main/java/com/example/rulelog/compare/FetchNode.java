@@ -18,6 +18,8 @@ public class FetchNode {
     private String sourceName;
     private Map<String, String> paramMapping = new LinkedHashMap<>();
     private String resultKey;         // 产出数据存的 key
+    /** 显式依赖的其他取数节点 ID（可选； paramMapping 引用了某结果 Key 时会自动推断依赖） */
+    private java.util.List<String> dependsOn = new java.util.ArrayList<>();
 
     public FetchNode() {
     }
@@ -37,4 +39,8 @@ public class FetchNode {
     }
     public String getResultKey() { return resultKey; }
     public void setResultKey(String resultKey) { this.resultKey = resultKey; }
+    public java.util.List<String> getDependsOn() { return dependsOn; }
+    public void setDependsOn(java.util.List<String> dependsOn) {
+        this.dependsOn = dependsOn == null ? new java.util.ArrayList<>() : dependsOn;
+    }
 }

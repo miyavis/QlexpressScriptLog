@@ -97,4 +97,46 @@ class CompareEngineTest {
         CompareResult r = engine.run(new CompareRule(), null);
         assertEquals(0, r.getTotalRows());
     }
+
+    /** DAG：B 的 paramMapping 引用 ${A}，即使配置顺序是 B→A，也要先执行 A */
+    @Test
+    void executesFetchNodesInDependencyOrder() {
+        CompareRule rule = new CompareRule();
+
+        FetchNode b = new FetchNode();
+        b.setId("B"); b.setResultKey("B"); b.setSourceName("B源");
+        b.getParamMapping().put("upstream", "${A}");   // 自动推断依赖 A
+        FetchNode a = new FetchNode();
+        a.setId("A"); a.setResultKey("A"); a.setSourceName("A源");
+        rule.setFetchNodes(Arrays.asList(b, a));        // 故意反序
+
+        java.util.List<String> order = new java.util.ArrayList<>();
+        CompareEngine engine = new CompareEngine((type, name, params) -> {
+            order.add(name);
+            if ("A源".equals(name)) return java.util.Collections.singletonList(
+                    java.util.Collections.singletonMap("订单号", "O001"));
+            assertEquals(java.util.Collections.singletonList(
+                            java.util.Collections.singletonMap("订单号", "O001")),
+                    params.get("upstream"), "B 应拿到 A 的产出");
+            return java.util.Collections.singletonList(
+                    java.util.Collections.singletonMap("订单号", "O001"));
+        });
+        engine.run(rule, java.util.Collections.emptyMap());
+        assertEquals(Arrays.asList("A源", "B源"), order, "拓扑排序应先 A 后 B");
+    }
+
+    @Test
+    void detectsCircularDependency() {
+        CompareRule rule = new CompareRule();
+        FetchNode a = new FetchNode();
+        a.setId("A"); a.setResultKey("A"); a.getParamMapping().put("x", "${B}");
+        FetchNode b = new FetchNode();
+        b.setId("B"); b.setResultKey("B"); b.getParamMapping().put("x", "${A}");
+        rule.setFetchNodes(Arrays.asList(a, b));
+
+        CompareEngine engine = new CompareEngine((t, n, p) -> null);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> engine.run(rule, java.util.Collections.emptyMap()));
+        assertTrue(ex.getMessage().contains("循环依赖"));
+    }
 }

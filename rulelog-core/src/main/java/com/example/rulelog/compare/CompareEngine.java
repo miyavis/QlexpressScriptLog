@@ -34,8 +34,8 @@ public class CompareEngine {
         Map<String, Object> context = new LinkedHashMap<>();
         if (inputContext != null) context.putAll(inputContext);
 
-        // 1. 执行取数节点
-        for (FetchNode node : rule.getFetchNodes()) {
+        // 1. 按依赖拓扑顺序执行取数节点（DAG）
+        for (FetchNode node : topologicalOrder(rule.getFetchNodes())) {
             Map<String, Object> params = ContextResolver.resolveParams(node.getParamMapping(), context);
             Object data = fetcher.fetch(node.getSourceType(), node.getSourceName(), params);
             if (node.getResultKey() != null && !node.getResultKey().trim().isEmpty()) {
@@ -95,6 +95,74 @@ public class CompareEngine {
         result.summarize();
         result.setElapsedMillis(System.currentTimeMillis() - start);
         return result;
+    }
+
+    /**
+     * 取数节点依赖拓扑排序（DAG）。
+     * 依赖来源：
+     * - 显式 dependsOn（节点 ID）
+     * - paramMapping 中引用了其他节点的 resultKey（如 ${A}、${A[0].name}）→ 自动推断
+     * 出现环时抛出明确异常，避免静默产生错误数据。
+     */
+    private List<FetchNode> topologicalOrder(List<FetchNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) return new ArrayList<>();
+        // 无 ID 的节点补一个稳定 ID（拓扑排序需要）
+        for (int i = 0; i < nodes.size(); i++) {
+            FetchNode n = nodes.get(i);
+            if (n.getId() == null || n.getId().trim().isEmpty()) n.setId("__node_" + i);
+        }
+        Map<String, FetchNode> byId = new LinkedHashMap<>();
+        Map<String, FetchNode> byResultKey = new LinkedHashMap<>();
+        for (FetchNode n : nodes) {
+            if (n.getId() != null) byId.put(n.getId(), n);
+            if (n.getResultKey() != null && !n.getResultKey().trim().isEmpty()) {
+                byResultKey.put(n.getResultKey(), n);
+            }
+        }
+
+        // 每个节点的依赖集合（去重，排除自身）
+        Map<String, Set<String>> deps = new LinkedHashMap<>();
+        for (FetchNode n : nodes) {
+            Set<String> d = new LinkedHashSet<>();
+            if (n.getDependsOn() != null) {
+                for (String id : n.getDependsOn()) {
+                    if (id != null && !id.equals(n.getId()) && byId.containsKey(id)) d.add(id);
+                }
+            }
+            if (n.getParamMapping() != null) {
+                for (String expr : n.getParamMapping().values()) {
+                    if (expr == null) continue;
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\$\\{([^}]+)\\}").matcher(expr);
+                    while (m.find()) {
+                        String path = m.group(1).trim();
+                        // 取路径首段作为结果 Key：A / A[0] / A.name
+                        String head = path.split("[\\[.]")[0];
+                        FetchNode producer = byResultKey.get(head);
+                        if (producer != null && producer.getId() != null && !producer.getId().equals(n.getId())) {
+                            d.add(producer.getId());
+                        }
+                    }
+                }
+            }
+            deps.put(n.getId(), d);
+        }
+
+        List<FetchNode> ordered = new ArrayList<>();
+        Set<String> emitted = new LinkedHashSet<>();
+        while (ordered.size() < nodes.size()) {
+            FetchNode next = null;
+            for (FetchNode n : nodes) {
+                if (emitted.contains(n.getId())) continue;
+                Set<String> d = deps.get(n.getId());
+                if (d == null || emitted.containsAll(d)) { next = n; break; }
+            }
+            if (next == null) {
+                throw new IllegalArgumentException("取数节点存在循环依赖，无法执行 DAG");
+            }
+            ordered.add(next);
+            emitted.add(next.getId());
+        }
+        return ordered;
     }
 
     /** 把取数结果规范化为行列表：Map → 单行；List → 逐元素（Map 或标量包装） */

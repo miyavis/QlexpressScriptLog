@@ -69,12 +69,15 @@ public class CompareRecordStore {
         }
     }
 
-    /** 历史列表：可按 ruleId 过滤，按时间倒序 */
-    public List<CompareRecord> list(String ruleId, int limit) {
+    /** 历史列表：可按 ruleId + 时间范围（epoch millis，含端点）过滤，按时间倒序 */
+    public List<CompareRecord> list(String ruleId, int limit, Long from, Long to) {
         synchronized (records) {
             List<CompareRecord> out = new ArrayList<>();
             for (CompareRecord r : records) {
-                if (ruleId == null || ruleId.equals(r.getRuleId())) out.add(r);
+                if (ruleId != null && !ruleId.equals(r.getRuleId())) continue;
+                if (from != null && r.getSavedAt() < from) continue;
+                if (to != null && r.getSavedAt() > to) continue;
+                out.add(r);
                 if (out.size() >= limit) break;
             }
             return out;
