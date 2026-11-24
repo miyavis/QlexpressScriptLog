@@ -11,8 +11,10 @@
       <button class="btn-secondary sm" @click="openCompareLibrary">📚 规则库</button>
       <button class="btn-secondary sm" @click="addFetch">＋ 取数</button>
     </div>
-    <div v-for="(n, i) in rule.fetchNodes" :key="n.id" class="cc-node">
+    <div v-for="(n, i) in rule.fetchNodes" :key="n.id" class="cc-node"
+         draggable="true" @dragstart="dragIdx = i" @dragover.prevent @drop="dropNode(i)">
       <div class="cc-node-head">
+        <span class="cc-drag" title="拖动排序">⠿</span>
         <span class="cc-node-title">取数{{ i + 1 }}</span>
         <input v-model="n.name" class="card-input" placeholder="名称" />
         <input v-model="n.resultKey" class="card-input" placeholder="结果Key" />
@@ -118,6 +120,15 @@ const rule = computed(() => props.card.compareRule);
 const result = ref(null);
 const running = ref(false);
 const onlyDiff = ref(false);
+const dragIdx = ref(null);
+const dropNode = (to) => {
+  if (dragIdx.value === null || dragIdx.value === to) return;
+  const nodes = rule.value.fetchNodes;
+  if (dragIdx.value < 0 || to < 0 || dragIdx.value >= nodes.length || to >= nodes.length) return;
+  const [moved] = nodes.splice(dragIdx.value, 1);
+  nodes.splice(to, 0, moved);
+  dragIdx.value = null;
+};
 
 const shownRows = computed(() => {
   const rows = result.value?.rows || [];
@@ -200,6 +211,7 @@ const fmt = (v) => (v === null || v === undefined) ? "—" : (typeof v === "obje
 .cc-section-head button { margin-left: auto; }
 .cc-node, .cc-compare { border: 1px solid var(--ink-200); border-radius: 7px; padding: 6px; margin-bottom: 5px; background: var(--ink-50); }
 .cc-node-head { display: flex; gap: 5px; align-items: center; margin-bottom: 5px; }
+.cc-drag { cursor: grab; color: var(--ink-400); user-select: none; }
 .cc-node-title { color: var(--accent); font-weight: 700; white-space: nowrap; }
 .cc-node-head .card-input { width: 90px; }
 .cc-node-head .card-btn { margin-left: auto; }
