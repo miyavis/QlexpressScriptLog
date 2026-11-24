@@ -87,6 +87,22 @@ class CompareControllerTest {
     }
 
     @Test
+    void runInlineRuleFromCard() throws Exception {
+        // 比对卡内联规则（未保存即可运行）
+        String inline = "{\"rule\":{\"name\":\"卡片比对\",\"fetchNodes\":["
+                + "{\"id\":\"f1\",\"name\":\"A\",\"sourceType\":\"CONST\",\"sourceName\":\"[{\\\"订单号\\\":\\\"O1\\\",\\\"金额\\\":10}]\",\"resultKey\":\"A\"},"
+                + "{\"id\":\"f2\",\"name\":\"B\",\"sourceType\":\"CONST\",\"sourceName\":\"[{\\\"订单号\\\":\\\"O1\\\",\\\"金额\\\":12}]\",\"resultKey\":\"B\"}],"
+                + "\"compareNode\":{\"keyField\":\"订单号\",\"sourceKeys\":[\"A\",\"B\"],\"fields\":[{\"field\":\"金额\",\"label\":\"金额\",\"strategy\":\"numericTolerance\",\"tolerance\":1}]}},"
+                + "\"context\":{}}";
+        mvc.perform(post("/api/compare-rules/run")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(inline))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRows").value(1))
+                .andExpect(jsonPath("$.inconsistentRows").value(1));
+    }
+
+    @Test
     void scheduleCrud() throws Exception {
         // 禁用状态：测试里不真正调度执行
         String body = "{\"ruleId\":\"cmp_sample\",\"name\":\"测试定时\",\"enabled\":false,"

@@ -470,6 +470,7 @@ const CARD_TYPES = [
   { type: "end", label: "结束卡", icon: "🔚", hint: "}" },
   { type: "return", label: "返回卡", icon: "🎯", hint: "返回 表达式" },
   { type: "decisiontable", label: "决策表", icon: "▦", hint: "表格化规则（First/Collect 命中）" },
+  { type: "compare", label: "比对卡", icon: "⚖️", hint: "多源数据按 key 比对（配置+运行都在卡内）" },
   { type: "text", label: "原样卡", icon: "📄", hint: "保留脚本原文（高级语法用）" }
 ];
 
@@ -587,6 +588,7 @@ const TYPE_META = {
   end: { icon: "🔚", label: "结束", cls: "t-end" },
   return: { icon: "🎯", label: "返回", cls: "t-return" },
   decisiontable: { icon: "▦", label: "决策表", cls: "t-decision" },
+  compare: { icon: "⚖️", label: "比对", cls: "t-compare" },
   text: { icon: "📄", label: "原样", cls: "t-text" }
 };
 const cardIcon = (type) => (TYPE_META[type] || {}).icon || "▢";
@@ -601,6 +603,7 @@ const cardTitle = (c) => {
   if (c.type === "end") return "条件块结束";
   if (c.type === "return") return `返回 · ${c.expr || "?"}`;
   if (c.type === "decisiontable") return `决策表 · ${c.resultVar || "结果"}（${(c.rows || []).length} 行）`;
+  if (c.type === "compare") return `比对 · ${(c.compareRule?.fetchNodes || []).length} 个数据源 · ${(c.compareRule?.compareNode?.fields || []).length} 个字段`;
   if (c.type === "text") return `原样 · ${String(c.raw || "").slice(0, 18) || "?"}`;
   return "";
 };
@@ -1454,6 +1457,10 @@ const compareRecords = ref([]);
 const compareFrom = ref("");
 const compareTo = ref("");
 const compareSchedules = ref([]);
+/** 比对规则库（历史/定时/已存规则）以弹层形式挂在脚本管理内，不再单独占导航菜单 */
+const showCompareLibrary = ref(false);
+const openCompareLibrary = () => { showCompareLibrary.value = true; };
+const closeCompareLibrary = () => { showCompareLibrary.value = false; };
 const onlyDifferences = ref(false);
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -1898,6 +1905,9 @@ export {
   compareFrom,
   compareTo,
   compareSchedules,
+  showCompareLibrary,
+  openCompareLibrary,
+  closeCompareLibrary,
   addCompareSchedule,
   deleteCompareSchedule,
   toggleCompareSchedule,

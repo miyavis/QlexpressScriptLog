@@ -272,6 +272,9 @@
                             <label>结果存入<input v-model="c.varName" class="card-input" placeholder="积分" /></label>
                             <span class="card-none">此卡片生成两行：参数定义行 + 服务调用行</span>
                           </template>
+                          <template v-else-if="c.type === 'compare'">
+                            <CompareCard :card="c" />
+                          </template>
                           <template v-else-if="c.type === 'decisiontable'">
                             <div class="decision-config">
                               <label>命中策略
@@ -599,6 +602,7 @@
 <script setup>
 import { onMounted, onUnmounted } from "vue";
 import ParamInput from "../components/ParamInput.vue";
+import CompareCard from "../components/CompareCard.vue";
 // 状态与动作全部来自 ../store.js（模块级单例，切页不丢状态）
 import {
   API,

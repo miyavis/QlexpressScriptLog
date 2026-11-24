@@ -27,6 +27,14 @@ export const newCard = (type) => {
     strategy: "first", resultVar: "结果", conditions: ["条件1", "条件2"],
     rows: [{ cells: ["", ""], result: "" }], defaultValue: "0"
   });
+  // 比对卡：不生成 QLExpress 脚本行，配置存在 meta.cards 里，运行时直连比对 API
+  if (type === "compare") Object.assign(card, {
+    contextJson: "{}",
+    compareRule: {
+      name: "比对", fetchNodes: [],
+      compareNode: { keyField: "", sourceKeys: [], fields: [] }
+    }
+  });
   if (type === "text") card.raw = "";
   return card;
 };

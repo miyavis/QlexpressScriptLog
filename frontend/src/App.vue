@@ -12,7 +12,6 @@
       <nav class="nav-menu">
         <button :class="{ active: view === 'scripts' }" @click="goView('scripts')"><span class="nav-ico">📜</span>脚本管理<span class="nav-badge">{{ scripts.length }}</span></button>
         <button :class="{ active: view === 'executions' }" @click="goView('executions')"><span class="nav-ico">📊</span>执行记录<span class="nav-badge">{{ executions.length }}</span></button>
-        <button :class="{ active: view === 'compare' }" @click="goView('compare')"><span class="nav-ico">⚖️</span>比对画布<span class="nav-badge">{{ compareRules.length }}</span></button>
         <button :class="{ active: view === 'help' }" @click="goView('help')"><span class="nav-ico">❓</span>使用帮助</button>
       </nav>
       <div class="nav-auth">
@@ -28,8 +27,17 @@
       <main class="app-main">
         <ScriptsPage v-if="view === 'scripts'" />
         <ExecutionsPage v-else-if="view === 'executions'" />
-        <ComparePage v-else-if="view === 'compare'" />
         <HelpPage v-else />
+        <!-- 比对规则库弹层：比对能力归属脚本管理，不单独占导航 -->
+        <div v-if="showCompareLibrary" class="modal-overlay" @click.self="closeCompareLibrary">
+          <div class="modal-shell">
+            <div class="modal-head">
+              <span>⚖️ 比对规则库（规则 / 历史 / 定时）</span>
+              <button class="card-btn" @click="closeCompareLibrary">✕ 关闭</button>
+            </div>
+            <div class="modal-body"><ComparePage /></div>
+          </div>
+        </div>
       </main>
       <footer class="app-footer">
         后端 Spring Boot 3.2 + QLExpress 4.1.4 (JDK 17) · 前端 Vite 4 + Vue 3.4 · traceId 贯穿，实现脚本与日志一一对应
@@ -44,7 +52,7 @@
 import { onMounted } from "vue";
 import ToastHost from "./components/ToastHost.vue";
 import LoginDialog from "./components/LoginDialog.vue";
-import { view, goView, scripts, executions, compareRules, loadScripts, loadExecutions, loadFunctionRegistry, loadCompareRules, applyDeepLink, selectLogRecord, isLoggedIn, currentUsername, logout, openLogin } from "./store.js";
+import { view, goView, scripts, executions, loadScripts, loadExecutions, loadFunctionRegistry, loadCompareRules, showCompareLibrary, closeCompareLibrary, applyDeepLink, selectLogRecord, isLoggedIn, currentUsername, logout, openLogin } from "./store.js";
 import ScriptsPage from "./pages/ScriptsPage.vue";
 import ExecutionsPage from "./pages/ExecutionsPage.vue";
 import ComparePage from "./pages/ComparePage.vue";

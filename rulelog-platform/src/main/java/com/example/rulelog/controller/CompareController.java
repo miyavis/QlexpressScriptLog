@@ -58,12 +58,20 @@ public class CompareController {
     /** 执行比对：Body = {ruleId, context:{...}} */
     @PostMapping("/run")
     public CompareResult run(@RequestBody Map<String, Object> body) {
-        String ruleId = body.get("ruleId") == null ? null : String.valueOf(body.get("ruleId"));
-        if (ruleId == null || ruleId.trim().isEmpty()) {
-            throw new IllegalArgumentException("缺少 ruleId");
+        // 两种入参：
+        // - ruleId：执行已保存的比对规则（独立比对规则库）
+        // - rule：卡片内联规则（比对卡直接在脚本画布里配置，无需先保存）
+        CompareRule rule;
+        if (body.get("rule") instanceof Map) {
+            rule = com.example.rulelog.util.JsonUtils.mapper().convertValue(body.get("rule"), CompareRule.class);
+        } else {
+            String ruleId = body.get("ruleId") == null ? null : String.valueOf(body.get("ruleId"));
+            if (ruleId == null || ruleId.trim().isEmpty()) {
+                throw new IllegalArgumentException("缺少 ruleId 或 rule");
+            }
+            rule = store.get(ruleId.trim());
+            if (rule == null) throw new NotFoundException("比对规则不存在: " + ruleId);
         }
-        CompareRule rule = store.get(ruleId.trim());
-        if (rule == null) throw new NotFoundException("比对规则不存在: " + ruleId);
         @SuppressWarnings("unchecked")
         Map<String, Object> context = body.get("context") instanceof Map
                 ? (Map<String, Object>) body.get("context") : java.util.Collections.emptyMap();
