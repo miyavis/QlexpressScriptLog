@@ -27,7 +27,8 @@ class ScriptStoreTest {
                 "第二张卡应为比对卡（与取数卡并列）");
         java.util.Map<?, ?> cmp = (java.util.Map<?, ?>) cards.get(1);
         java.util.Map<?, ?> rule = (java.util.Map<?, ?>) cmp.get("compareRule");
-        assertEquals(2, ((java.util.List<?>) rule.get("fetchNodes")).size());
+        assertEquals(4, ((java.util.List<?>) rule.get("fetchNodes")).size(),
+                "应为 取数A/取数B/加工/取数C 四个节点");
     }
 
     @Test

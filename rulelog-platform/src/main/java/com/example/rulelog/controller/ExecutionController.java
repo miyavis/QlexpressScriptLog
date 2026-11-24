@@ -2,6 +2,7 @@ package com.example.rulelog.controller;
 
 import com.example.rulelog.exception.NotFoundException;
 import com.example.rulelog.model.RuleExecutionRecord;
+import com.example.rulelog.model.Script;
 import com.example.rulelog.service.RuleExecutionService;
 import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.util.RequestValidator;
@@ -24,17 +25,23 @@ public class ExecutionController {
     private final ExecutionRecordStore recordStore;
     private final Express4Engine engine;
     private final com.example.rulelog.store.AuditStore auditStore;
+    private final com.example.rulelog.store.ScriptStore scriptStore;
+    private final com.example.rulelog.service.CompareService compareService;
     @Value("${app.script-timeout-millis:5000}")
     private long scriptTimeoutMillis;
 
     public ExecutionController(RuleExecutionService ruleExecutionService,
                                ExecutionRecordStore recordStore,
                                Express4Engine engine,
-                               com.example.rulelog.store.AuditStore auditStore) {
+                               com.example.rulelog.store.AuditStore auditStore,
+                               com.example.rulelog.store.ScriptStore scriptStore,
+                               com.example.rulelog.service.CompareService compareService) {
         this.ruleExecutionService = ruleExecutionService;
         this.recordStore = recordStore;
         this.engine = engine;
         this.auditStore = auditStore;
+        this.scriptStore = scriptStore;
+        this.compareService = compareService;
     }
 
     /** 执行脚本：POST /api/executions/run?scriptId=xxx （Body 为参数 JSON） */
@@ -46,7 +53,39 @@ public class ExecutionController {
         auditStore.record(currentActor(), "RUN", scriptId, params == null ? "" : String.valueOf(params));
         // 执行错误已被 RuleExecutionService 转成 record 内的 errorMessage 展示；
         // 这里不再包一层 RuntimeException（会把内部异常信息经 GlobalExceptionHandler 泄漏）
-        return ruleExecutionService.run(scriptId, params);
+        RuleExecutionRecord record = ruleExecutionService.run(scriptId, params);
+
+        // 取数 → 比对 一次完成：同一张画布里的比对卡随脚本一起执行，
+        // 结果作为步骤写进同一条执行记录（同一 traceId），不再是两个独立过程。
+        runCompareCards(scriptId, params, record);
+        return record;
+    }
+
+    /** 执行脚本里的比对卡：与脚本共用一次执行/一个 traceId，日志写进同一条记录 */
+    @SuppressWarnings("unchecked")
+    private void runCompareCards(String scriptId, Map<String, Object> params, RuleExecutionRecord record) {
+        if (record == null || !record.isSuccess()) return;
+        Script script = scriptStore.get(scriptId);
+        if (script == null || script.getMeta() == null) return;
+        Object cardsObj = script.getMeta().get("cards");
+        if (!(cardsObj instanceof List)) return;
+        for (Object item : (List<Object>) cardsObj) {
+            if (!(item instanceof Map)) continue;
+            Map<String, Object> card = (Map<String, Object>) item;
+            if (!"compare".equals(card.get("type"))) continue;
+            Object ruleObj = card.get("compareRule");
+            if (!(ruleObj instanceof Map)) continue;
+            try {
+                com.example.rulelog.compare.CompareRule rule =
+                        com.example.rulelog.util.JsonUtils.mapper().convertValue(
+                                ruleObj, com.example.rulelog.compare.CompareRule.class);
+                com.example.rulelog.compare.CompareResult result = compareService.run(rule, params);
+                ruleExecutionService.appendCompareStep(record, String.valueOf(card.getOrDefault("name", "比对卡")), result);
+            } catch (Exception e) {
+                org.slf4j.LoggerFactory.getLogger(ExecutionController.class)
+                        .warn("比对卡执行失败 [{}]: {}", scriptId, e.getMessage());
+            }
+        }
     }
 
     /**

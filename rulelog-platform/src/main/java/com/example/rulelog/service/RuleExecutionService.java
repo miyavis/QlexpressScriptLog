@@ -158,6 +158,18 @@ public class RuleExecutionService {
         return record;
     }
 
+    /** 把一次比对结果作为步骤追加到脚本执行记录（同一 traceId，执行记录里能一并看到） */
+    public void appendCompareStep(RuleExecutionRecord record, String cardName,
+                                  com.example.rulelog.compare.CompareResult result) {
+        if (record == null || result == null) return;
+        String detail = "比对 " + result.getTotalRows() + " 行，一致 " + result.getConsistentRows()
+                + "，不一致 " + result.getInconsistentRows() + "（不一致字段 " + result.getInconsistentCells() + "）";
+        StepLog step = new StepLog(record.getTraceId(), "比对引擎",
+                "比对: " + (cardName == null ? "比对卡" : cardName), detail, System.currentTimeMillis());
+        record.getRootSteps().add(step);
+        recordStore.save(record);
+    }
+
     /**
      * 将 Service 调用与根步骤按脚本行号分组到 {@link RuleExecutionRecord#lineExecutions}。
      * 为每个调用查找脚本中包含其中文函数名的行号，保证调用与代码行一一对应。

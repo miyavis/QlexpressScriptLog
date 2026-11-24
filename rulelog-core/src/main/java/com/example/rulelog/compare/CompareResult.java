@@ -13,6 +13,8 @@ public class CompareResult {
     private int totalCells;
     private int inconsistentCells;
     private long elapsedMillis;
+    /** 本次比对的主 traceId（供前端下钻日志） */
+    private String traceId;
     /** 取数脚本产生的执行 traceId（供平台下钻执行日志） */
     private final java.util.List<String> traceIds = new java.util.ArrayList<>();
     /** 脚本 ID → traceId（供前端生成深链） */
@@ -32,6 +34,8 @@ public class CompareResult {
     public void setInconsistentCells(int inconsistentCells) { this.inconsistentCells = inconsistentCells; }
     public long getElapsedMillis() { return elapsedMillis; }
     public void setElapsedMillis(long elapsedMillis) { this.elapsedMillis = elapsedMillis; }
+    public String getTraceId() { return traceId; }
+    public void setTraceId(String traceId) { this.traceId = traceId; }
     public java.util.List<String> getTraceIds() { return traceIds; }
     public java.util.Map<String, String> getScriptTraceIds() { return scriptTraceIds; }
 

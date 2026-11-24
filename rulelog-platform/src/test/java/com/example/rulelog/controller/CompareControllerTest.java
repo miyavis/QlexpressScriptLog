@@ -103,6 +103,27 @@ class CompareControllerTest {
     }
 
     @Test
+    void deriveAndComparePipeline() throws Exception {
+        // A=2, B=3 → 加工 a*b=6 → 与 C=6 比对（验证 DAG 依赖 + DERIVE 节点）
+        String inline = "{\"rule\":{\"name\":\"加工比对\",\"fetchNodes\":["
+                + "{\"id\":\"a\",\"name\":\"A\",\"sourceType\":\"CONST\",\"sourceName\":\"2\",\"resultKey\":\"A\",\"paramMapping\":{},\"dependsOn\":[]},"
+                + "{\"id\":\"b\",\"name\":\"B\",\"sourceType\":\"CONST\",\"sourceName\":\"3\",\"resultKey\":\"B\",\"paramMapping\":{},\"dependsOn\":[]},"
+                + "{\"id\":\"ab\",\"name\":\"AB\",\"sourceType\":\"DERIVE\",\"sourceName\":\"返回 a * b;\","
+                + "\"resultKey\":\"AB\",\"paramMapping\":{\"a\":\"${A}\",\"b\":\"${B}\"},\"dependsOn\":[]},"
+                + "{\"id\":\"c\",\"name\":\"C\",\"sourceType\":\"CONST\",\"sourceName\":\"6\",\"resultKey\":\"C\",\"paramMapping\":{},\"dependsOn\":[]}],"
+                + "\"compareNode\":{\"keyField\":\"value\",\"sourceKeys\":[\"AB\",\"C\"],"
+                + "\"fields\":[{\"field\":\"value\",\"label\":\"值\",\"strategy\":\"equal\"}]}},"
+                + "\"context\":{}}";
+        mvc.perform(post("/api/compare-rules/run")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(inline))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRows").value(1))
+                .andExpect(jsonPath("$.inconsistentRows").value(0))
+                .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    @Test
     void scheduleCrud() throws Exception {
         // 禁用状态：测试里不真正调度执行
         String body = "{\"ruleId\":\"cmp_sample\",\"name\":\"测试定时\",\"enabled\":false,"

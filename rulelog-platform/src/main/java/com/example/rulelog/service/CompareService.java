@@ -45,6 +45,10 @@ public class CompareService {
         CompareResult result = engine.run(rule, context);
         result.getTraceIds().addAll(traceIds);
         result.getScriptTraceIds().putAll(scriptTraceIds);
+        // 主 traceId：优先用第一个取数执行记录，否则为本次比对生成一个
+        result.setTraceId(traceIds.isEmpty()
+                ? java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase()
+                : traceIds.get(0));
         return result;
     }
 
@@ -66,6 +70,18 @@ public class CompareService {
                 }
             case "FUNCTION":
                 return invokeFunction(sourceName, params, scriptTraceIds);
+            case "DERIVE":
+                // 加工节点：用 QL 脚本把上游取数结果（paramMapping 里的 ${A}/${B}）加工成新数据
+                try {
+                    RuleExecutionRecord rec = executionService.runByContent("@加工:" + sourceName, sourceName, params);
+                    if (rec.getTraceId() != null) {
+                        traceIds.add(rec.getTraceId());
+                        scriptTraceIds.put("加工:" + sourceName, rec.getTraceId());
+                    }
+                    return rec.getResult();
+                } catch (Exception e) {
+                    throw new RuntimeException("加工节点执行失败: " + e.getMessage(), e);
+                }
             case "CONST":
             default:
                 try {

@@ -197,31 +197,44 @@ public class ScriptStore {
         java.util.List<Map<String, Object>> cards = new ArrayList<>();
         cards.add(card("cc1", "call", fields("varName", "等级", "func", "查询用户等级", "param", "user")));
 
+        // 取数A：调用业务函数拿积分
         Map<String, Object> a = new LinkedHashMap<>();
-        a.put("id", "fa"); a.put("name", "取数A"); a.put("sourceType", "CONST");
-        a.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":100,\"等级\":\"VIP\"},"
-                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
-        a.put("resultKey", "A"); a.put("paramMapping", new LinkedHashMap<>()); a.put("dependsOn", new ArrayList<>());
+        a.put("id", "fa"); a.put("name", "取数A·积分"); a.put("sourceType", "FUNCTION");
+        a.put("sourceName", "查询用户积分");
+        a.put("paramMapping", fields("user", "${user}"));
+        a.put("resultKey", "A"); a.put("dependsOn", new ArrayList<>());
 
+        // 取数B：调用业务函数拿折扣
         Map<String, Object> b = new LinkedHashMap<>();
-        b.put("id", "fb"); b.put("name", "取数B"); b.put("sourceType", "CONST");
-        b.put("sourceName", "[{\"订单号\":\"O001\",\"金额\":103,\"等级\":\"VIP\"},"
-                + "{\"订单号\":\"O002\",\"金额\":200,\"等级\":\"普通\"}]");
-        b.put("resultKey", "B"); b.put("paramMapping", new LinkedHashMap<>()); b.put("dependsOn", new ArrayList<>());
+        b.put("id", "fb"); b.put("name", "取数B·折扣"); b.put("sourceType", "FUNCTION");
+        b.put("sourceName", "计算折扣");
+        b.put("paramMapping", fields("user", "${user}"));
+        b.put("resultKey", "B"); b.put("dependsOn", new ArrayList<>());
 
-        Map<String, Object> amount = new LinkedHashMap<>();
-        amount.put("field", "金额"); amount.put("label", "金额");
-        amount.put("strategy", "numericTolerance"); amount.put("tolerance", 2);
-        Map<String, Object> level = new LinkedHashMap<>();
-        level.put("field", "等级"); level.put("label", "等级");
-        level.put("strategy", "equal"); level.put("tolerance", 0);
+        // 加工：A 和 B 相乘得到应付金额（DAG 依赖由 ${A}/${B} 自动推断）
+        Map<String, Object> ab = new LinkedHashMap<>();
+        ab.put("id", "fab"); ab.put("name", "加工·应付金额"); ab.put("sourceType", "DERIVE");
+        ab.put("sourceName", "返回 a * b;");
+        ab.put("paramMapping", fields("a", "${A}", "b", "${B}"));
+        ab.put("resultKey", "AB"); ab.put("dependsOn", new ArrayList<>());
+
+        // 取数C：期望值
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("id", "fc"); c.put("name", "取数C·期望"); c.put("sourceType", "CONST");
+        c.put("sourceName", "334.4");
+        c.put("paramMapping", new LinkedHashMap<>()); c.put("resultKey", "C");
+        c.put("dependsOn", new ArrayList<>());
+
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("field", "value"); value.put("label", "应付金额");
+        value.put("strategy", "numericTolerance"); value.put("tolerance", 0.01);
         Map<String, Object> cmp = new LinkedHashMap<>();
-        cmp.put("keyField", "订单号");
-        cmp.put("sourceKeys", java.util.Arrays.asList("A", "B"));
-        cmp.put("fields", java.util.Arrays.asList(amount, level));
+        cmp.put("keyField", "value");
+        cmp.put("sourceKeys", java.util.Arrays.asList("AB", "C"));
+        cmp.put("fields", java.util.Arrays.asList(value));
         Map<String, Object> rule = new LinkedHashMap<>();
-        rule.put("name", "订单双源对账");
-        rule.put("fetchNodes", java.util.Arrays.asList(a, b));
+        rule.put("name", "积分×折扣 对账（A+B加工 → 对比C）");
+        rule.put("fetchNodes", java.util.Arrays.asList(a, b, ab, c));
         rule.put("compareNode", cmp);
         Map<String, Object> cf = new LinkedHashMap<>();
         cf.put("contextJson", "{\"user\":\"张三\"}");
