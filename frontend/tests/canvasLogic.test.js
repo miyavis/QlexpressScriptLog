@@ -360,6 +360,13 @@ describe("validateCardStructure", () => {
     const cards = ["if", "if", "calc", "end", "end"].map((t) => newCard(t));
     expect(validateCardStructure(cards)).toEqual([]);
   });
+  it("决策表的 resultVar 算作已定义，返回卡引用不误报", () => {
+    const dt = newCard("decisiontable");
+    dt.resultVar = "折扣";
+    const ret = newCard("return");
+    ret.expr = "折扣";
+    expect(validateCardStructure([dt, ret])).toEqual([]);
+  });
   it("结束卡多于如果卡 → 多余的结束卡报问题", () => {
     const cards = ["end", "end"].map((t) => newCard(t));
     const issues = validateCardStructure(cards);

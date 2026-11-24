@@ -304,6 +304,10 @@ export const collectUndefinedVars = (cards, paramKeys) => {
     } else if (c.type === "call" || c.type === "calc") {
       const s = String(c.varName || "").trim();
       if (s) defined.add(s);
+    } else if (c.type === "decisiontable") {
+      // 决策表命中结果写入 resultVar，后续返回卡可引用
+      const s = String(c.resultVar || "").trim();
+      if (s) defined.add(s);
     }
   }
   return issues;
