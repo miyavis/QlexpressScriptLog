@@ -2,7 +2,18 @@
 
 > 版本：v1.1.6 基线之上
 > 目标：从"带 UI 的规则执行器"升级为"可观测的规则执行平台"
-> 状态：待执行（确认范围后按批次实施）
+> 状态：P1 / P2 主体已落地（v1.1.6 已验证）；本文档保留为当时的设计档案，当前口径见下节。
+
+---
+
+## 落地状态（2026-11-25 核对）
+
+> 后文各批次描述保留为原始设计稿，不代表仍待实施；以下结论依据 v1.1.6 源码与实测。
+
+- **P1 平台化核心：已完成**。多模块 Gradle（`rulelog-core` / `rulelog-platform`）、`@RuleFunction/@RuleParam` + `FunctionScanner`、`ParamDef` 递归模型与 `ParamBinder/ParamValidator`、`RuleEngine.builder()`、`File/JdbcRuleLoader` + TTL 缓存、`QL_RULE` DDL 与同步、JitPack、对外 `/api/public/*` 三个接口均已落地。
+- **P2 比对画布：主体已完成**。`CompareEngine`（取数 DAG + 字段策略）、`/api/compare-rules` + `/api/compare-schedules`、JSON 持久化与历史重跑、前端比对卡与运行页均已落地；近期提交仍在持续打磨联动与明细日志。
+- **P3**：试跑按钮已在脚本编辑页实现；其余暂缓项（规则间调用、灰度发布、iframe/JS SDK、cron 表达式、异步回调、外部接口取数）维持"暂缓"结论。
+- **后续改进**：见 `docs/IMPROVEMENT_PLAN.md`。
 
 ---
 
@@ -107,7 +118,7 @@ public @interface RuleParam {
 - `Express4Engine` 改组合 core 引擎 + 注解扫描注册（删手写注册代码）
 - `ServiceCallAspect` 优先读方法上 `@RuleFunction.name()` 拿中文名
 - `/api/functions` 下发嵌套 params（无注解的用 paramHint 兜底）
-- **验收关卡**：全量回归（前端 181 + 后端测试 + 端到端冒烟），不过不继续
+- **验收关卡**：全量回归（前端 183 + 后端测试 + 端到端冒烟），不过不继续
 
 ### P1-7 QL_RULE 表 + DDL
 ```sql
@@ -162,7 +173,7 @@ QL_RULE_HISTORY (ID PK, RULE_ID, VERSION, RULE_CONTENT, SAVED_AT)
 - **验收**：demo 跑通
 
 ### P1-14 全量回归 + 发版
-- 前端 181 + 后端全绿，CI 通过，打 tag 发版
+- 前端 183 + 后端全绿，CI 通过，打 tag 发版
 
 ---
 

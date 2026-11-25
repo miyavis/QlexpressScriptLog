@@ -10,14 +10,17 @@ import com.example.rulelog.model.Script;
 import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.store.ScriptStore;
 import com.example.rulelog.trace.RuleTraceContext;
+import com.example.rulelog.util.ContentHash;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.reflect.Field;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -87,6 +90,51 @@ class RuleExecutionServiceTest {
         assertNotNull(line2);
         assertFalse(line2.getSteps().isEmpty(), "记录日志的步骤应归到第 2 行");
         assertEquals("中间打印", line2.getSteps().get(0).getStepName());
+    }
+
+    @Test
+    void trustedSourceMapKeepsStepsOutOfStringLookalike() throws Exception {
+        // 第 1 行字符串里出现与步骤名相同的文字；可信映射只覆盖第 2 行，步骤不应归到第 1 行
+        String content = "记录日志(\"查询用户等级\", \"伪调用\");\n记录日志(\"真实打印\", \"值\");";
+        Script s = save("s4", content);
+        s.setMeta(metaWithSourceMap(content, ContentHash.hashContent(content), 2, 2));
+        scriptStore.put(s);
+
+        RuleExecutionRecord r = service.run("s4", null);
+        assertTrue(r.isSuccess());
+        LineExecution line1 = r.getLineExecutions().get(1);
+        assertTrue(line1 == null || line1.getSteps().isEmpty(), "字符串里的同名不应抢到行归属");
+        LineExecution line2 = r.getLineExecutions().get(2);
+        assertNotNull(line2);
+        assertTrue(line2.getSteps().stream().anyMatch(st -> "真实打印".equals(st.getStepName())));
+    }
+
+    @Test
+    void staleSourceMapFallsBackToTextMatching() throws Exception {
+        String content = "记录日志(\"查询用户等级\", \"伪调用\");\n返回 1;";
+        Script s = save("s5", content);
+        // hash 不匹配 → 映射过期，退回全文匹配，步骤仍按步骤名归到第 1 行
+        s.setMeta(metaWithSourceMap(content, "stale-hash", 2, 2));
+        scriptStore.put(s);
+
+        RuleExecutionRecord r = service.run("s5", null);
+        assertTrue(r.isSuccess());
+        LineExecution line1 = r.getLineExecutions().get(1);
+        assertNotNull(line1);
+        assertTrue(line1.getSteps().stream().anyMatch(st -> "查询用户等级".equals(st.getStepName())));
+    }
+
+    private Map<String, Object> metaWithSourceMap(String content, String hash, int startLine, int endLine) {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("cardId", "call_1");
+        card.put("startLine", startLine);
+        card.put("endLine", endLine);
+        List<Map<String, Object>> cards = new ArrayList<>();
+        cards.add(card);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("contentHash", hash);
+        meta.put("cardSourceMap", cards);
+        return meta;
     }
 
     @Test

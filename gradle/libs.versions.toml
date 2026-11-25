@@ -1,0 +1,13 @@
+# 依赖版本集中声明（Gradle 7.6+ Version Catalog）
+# 两个模块通过 libs.* 引用，避免 SDK(core) 与平台(platform) 版本漂移。
+[versions]
+jackson = "2.15.4"
+qlexpress = "4.1.4"
+junit = "5.10.1"
+h2 = "2.2.224"
+
+[libraries]
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+qlexpress4 = { module = "com.alibaba:qlexpress4", version.ref = "qlexpress" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }

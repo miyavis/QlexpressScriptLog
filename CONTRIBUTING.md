@@ -5,7 +5,7 @@
 ## 开发环境
 
 - JDK 17（Spring Boot 3.2，构建用 Gradle Wrapper 7.6.4，无需本机安装 Gradle）
-- Node.js 16+ + npm
+- Node.js 20+ + npm（Vitest 4 要求）
 
 ## 本地开发
 
@@ -22,8 +22,8 @@ npm run dev
 ## 提交前必做
 
 ```bash
-./gradlew test                    # 后端单测（22 个用例）
-cd frontend && npm run test       # 前端单测（83 个用例）
+./gradlew test                    # 后端单测（131 个用例）
+cd frontend && npm run test       # 前端单测（183 个用例）
 cd frontend && npm run build      # 前端构建通过
 ```
 

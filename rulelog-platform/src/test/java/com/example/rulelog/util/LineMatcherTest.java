@@ -2,6 +2,9 @@ package com.example.rulelog.util;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -40,5 +43,18 @@ class LineMatcherTest {
     void nullNameSafe() {
         LineMatcher matcher = new LineMatcher(new String[]{"x = 1;"});
         assertNull(matcher.next(null));
+    }
+
+    @Test
+    void rangesExcludeLookalikeLinesOutsideCards() {
+        String[] lines = {
+            "记录日志(\"查询用户等级\", \"伪调用\");", // 字符串里的同名，不属于卡片区间
+            "等级 = 查询用户等级(user);",
+            "返回 等级;"
+        };
+        List<int[]> ranges = Arrays.asList(new int[]{2, 3});
+        LineMatcher matcher = new LineMatcher(lines, ranges);
+        assertEquals(2, matcher.next("查询用户等级"), "只在实际调用卡的行区间内匹配");
+        assertNull(matcher.next("查询用户等级"));
     }
 }

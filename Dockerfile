@@ -1,5 +1,5 @@
-# Build the Vue frontend with a Node version supported by Vite 4.
-FROM node:18-alpine AS frontend
+# Build the Vue frontend with a Node version supported by Vite 6 / Vitest 4.
+FROM node:20-alpine AS frontend
 WORKDIR /workspace/frontend
 COPY frontend/package*.json ./
 RUN npm ci

@@ -28,12 +28,12 @@ repositories { mavenCentral() }
 
 dependencies {
     // Jackson：序列化工具（api 暴露，SDK 用户需要）
-    api 'com.fasterxml.jackson.core:jackson-databind:2.15.4'
+    api libs.jackson.databind
     // QLExpress4：规则引擎（api 暴露，SDK 用户直接用）
-    api 'com.alibaba:qlexpress4:4.1.4'
+    api libs.qlexpress4
 
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
-    testImplementation 'com.h2database:h2:2.1.214'
+    testImplementation libs.junit.jupiter
+    testImplementation libs.h2
 }
 
 publishing {

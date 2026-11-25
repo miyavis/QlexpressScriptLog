@@ -17,6 +17,7 @@ import com.example.rulelog.trace.OtelTraceService;
 import com.example.rulelog.trace.StepLogger;
 import com.example.rulelog.store.ExecutionRecordStore;
 import com.example.rulelog.store.ScriptStore;
+import com.example.rulelog.util.ContentHash;
 import com.example.rulelog.util.ErrorSummarizer;
 import com.example.rulelog.util.LineMatcher;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,17 +97,18 @@ public class RuleExecutionService {
         if (overrideParams != null) {
             actualParams.putAll(overrideParams);
         }
-        return executeInternal(script.getId(), script.getName(), script.getContent(), actualParams);
+        return executeInternal(script.getId(), script.getName(), script.getContent(), actualParams, script.getMeta());
     }
 
     /** 执行任意脚本文本（比对画布里"函数调用"取数节点用），同样生成可下钻的执行记录 */
     public RuleExecutionRecord runByContent(String virtualScriptId, String content, Map<String, Object> params) throws Exception {
         return executeInternal(virtualScriptId, virtualScriptId, content,
-                params == null ? new LinkedHashMap<>() : params);
+                params == null ? new LinkedHashMap<>() : params, null);
     }
 
     private RuleExecutionRecord executeInternal(String scriptId, String scriptName,
-                                                 String content, Map<String, Object> actualParams) throws Exception {
+                                                 String content, Map<String, Object> actualParams,
+                                                  Map<String, Object> meta) throws Exception {
         String traceId = UUID.randomUUID().toString().replace("-", "").substring(0, 16)
                 .toUpperCase();
 
@@ -140,7 +143,7 @@ public class RuleExecutionService {
             StepLogger.Collector collector = StepLogger.drainAndRemove();
             record.setCalls(collector.getRootCalls());
             record.setRootSteps(collector.getRootSteps());
-            groupLogsByLine(record, qlResult, content);
+            groupLogsByLine(record, qlResult, content, meta);
             record.setEndTime(System.currentTimeMillis());
             record.setDurationMs(Math.max(0, record.getEndTime() - record.getStartTime()));
             // ② OTel 导出是"尽力而为"：collector 不可达等异常绝不能吞掉执行记录或泄漏 ThreadLocal
@@ -253,18 +256,57 @@ public class RuleExecutionService {
      * 将 Service 调用与根步骤按脚本行号分组到 {@link RuleExecutionRecord#lineExecutions}。
      * 为每个调用查找脚本中包含其中文函数名的行号，保证调用与代码行一一对应。
      */
-    private void groupLogsByLine(RuleExecutionRecord record, QLResult qlResult, String scriptContent) {
+    private void groupLogsByLine(RuleExecutionRecord record, QLResult qlResult, String scriptContent,
+                                 Map<String, Object> meta) {
         String[] lines = scriptContent == null ? new String[0] : scriptContent.split("\n", -1);
-        initLineExecutions(record, lines);
-        LineMatcher matcher = new LineMatcher(lines); // 同名函数按出现顺序依次消费行号
+        // 生成期 sourceMap 只在 contentHash 匹配时可信；否则退回全文文本匹配
+        List<int[]> ranges = trustedRanges(meta, scriptContent);
+        initLineExecutions(record, lines, ranges);
+        LineMatcher matcher = new LineMatcher(lines, ranges); // 同名函数按出现顺序依次消费行号
         groupCalls(record, lines, matcher);
-        groupRootSteps(record, lines);
+        groupRootSteps(record, lines, ranges);
         collectTraces(record, qlResult, lines);
         recomputeActivity(record);
     }
 
-    /** 初始化行级记录：含中文函数名的行，兜底为所有非空行 */
-    private void initLineExecutions(RuleExecutionRecord record, String[] lines) {
+    /**
+     * 从 meta.cardSourceMap 提取可信行区间。仅有 meta.contentHash 与脚本文本一致时才采用，
+     * 避免外部手改脚本后旧卡片映射把日志归到错误行（与前端的过期校验口径一致）。
+     */
+    private List<int[]> trustedRanges(Map<String, Object> meta, String scriptContent) {
+        List<int[]> ranges = new ArrayList<>();
+        if (meta == null) return ranges;
+        Object hash = meta.get("contentHash");
+        if (!(hash instanceof String) || !hash.equals(ContentHash.hashContent(scriptContent))) {
+            return ranges;
+        }
+        Object raw = meta.get("cardSourceMap");
+        if (!(raw instanceof List)) return ranges;
+        for (Object item : (List<?>) raw) {
+            if (!(item instanceof Map)) continue;
+            Map<?, ?> card = (Map<?, ?>) item;
+            Object start = card.get("startLine");
+            Object end = card.get("endLine");
+            if (!(start instanceof Number) || !(end instanceof Number)) continue;
+            if (Boolean.TRUE.equals(card.get("empty"))) continue;
+            int s = ((Number) start).intValue();
+            int e = ((Number) end).intValue();
+            if (s >= 1 && e >= s) ranges.add(new int[]{s, e});
+        }
+        ranges.sort(Comparator.comparingInt(r -> r[0]));
+        return ranges;
+    }
+
+    /** 初始化行级记录：可信映射时取区间内的行；否则含中文函数名的行，兜底为所有非空行 */
+    private void initLineExecutions(RuleExecutionRecord record, String[] lines, List<int[]> ranges) {
+        if (!ranges.isEmpty()) {
+            for (int[] range : ranges) {
+                for (int i = Math.max(0, range[0] - 1); i <= Math.min(lines.length - 1, range[1] - 1); i++) {
+                    putLine(record, i + 1, lines);
+                }
+            }
+            return;
+        }
         Set<String> chineseNames = aliasRegistry.getAllChineseNames();
         for (int i = 0; i < lines.length; i++) {
             for (String name : chineseNames) {
@@ -311,11 +353,11 @@ public class RuleExecutionService {
     }
 
     /** 把脚本打印（根步骤）按步骤名归到所在行 */
-    private void groupRootSteps(RuleExecutionRecord record, String[] lines) {
+    private void groupRootSteps(RuleExecutionRecord record, String[] lines, List<int[]> ranges) {
         List<StepLog> rootSteps = record.getRootSteps();
         if (rootSteps == null) return;
         for (StepLog step : rootSteps) {
-            Integer targetLine = findLineByStepName(lines, step.getStepName());
+            Integer targetLine = findLineByStepName(lines, step.getStepName(), ranges);
             if (targetLine == null) {
                 targetLine = record.getLineExecutions().isEmpty()
                         ? 1 : record.getLineExecutions().keySet().iterator().next();
@@ -325,9 +367,17 @@ public class RuleExecutionService {
         }
     }
 
-    /** 按步骤名找脚本行（首次匹配），找不到返回 null */
-    private Integer findLineByStepName(String[] lines, String stepName) {
+    /** 按步骤名找脚本行（首次匹配）；有可信映射时只在区间内查找，找不到返回 null */
+    private Integer findLineByStepName(String[] lines, String stepName, List<int[]> ranges) {
         if (stepName == null || stepName.isEmpty()) return null;
+        if (ranges != null && !ranges.isEmpty()) {
+            for (int[] range : ranges) {
+                for (int i = Math.max(0, range[0] - 1); i <= Math.min(lines.length - 1, range[1] - 1); i++) {
+                    if (lines[i] != null && lines[i].contains(stepName)) return i + 1;
+                }
+            }
+            return null; // 可信映射内找不到就不回退全文，避免字符串/注释里的同名干扰
+        }
         for (int i = 0; i < lines.length; i++) {
             if (lines[i].contains(stepName)) return i + 1;
         }

@@ -636,7 +636,6 @@ import {
   condText,
   condVerdict,
   notTakenText,
-  OP_SYMBOLS,
   lineAssigns,
   leReturn,
   callArgs,
